@@ -68,7 +68,7 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 				return meh.Wrap(err, "write output file", nil)
 			}
 			logger.Debug("output file written",
-				zap.Int64("bytes_written", n),
+				zap.String("bytes_written", logging.FormatByteCountDecimal(n)),
 				zap.String("filename", filename))
 			return nil
 		}

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"io"
 	"sync"
+	"time"
 )
 
 type SourceReader struct {
@@ -61,13 +62,16 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		}
 	}()
 	// Wait for writer ready.
+	start := time.Now()
 	forwarder.logger.Debug("wait for source writer ready")
 	select {
 	case <-ctx.Done():
 		return meh.NewInternalErrFromErr(ctx.Err(), "wait for source writer ready", nil)
 	case <-forwarder.writer.open:
 	}
-	forwarder.logger.Debug(fmt.Sprintf("source writer has opened. forwarding to %d reader(s)", len(forwarder.readers)))
+	forwarder.logger.Debug(fmt.Sprintf("source writer has opened. forwarding to %d reader(s)", len(forwarder.readers)),
+		zap.Time("source_writer_ready_at", time.Now()),
+		zap.Duration("source_writer_ready_after", time.Since(start)))
 	// Forward to all source readers.
 	sourceReaders := make([]io.Writer, 0)
 	for _, reader := range forwarder.readers {
@@ -77,20 +81,24 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	if len(sourceReaders) > 0 {
 		allSourceReaders = io.MultiWriter(sourceReaders...)
 		forwarder.logger.Debug("notify all readers of source being open")
+		start = time.Now()
 		err := notifyReadersOfOpenSource(ctx, forwarder.readers)
 		if err != nil {
 			return meh.Wrap(err, "notify readers of open source", nil)
 		}
-		forwarder.logger.Debug("all readers notified")
+		forwarder.logger.Debug("all readers notified", zap.Duration("took", time.Since(start)))
 	} else {
 		// No readers registered. Discard.
 		allSourceReaders = io.Discard
 		forwarder.logger.Debug("discard source output due to no readers registered")
 	}
 	copyDone := make(chan error)
+	start = time.Now()
+	var bytesCopied int64
 	go func() {
 		forwarder.logger.Debug("copy data")
-		_, err := io.Copy(allSourceReaders, forwarder.writer.reader)
+		var err error
+		bytesCopied, err = io.Copy(allSourceReaders, forwarder.writer.reader)
 		if err != nil {
 			err = meh.Wrap(err, "copy", nil)
 		}
@@ -107,7 +115,9 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 			return err
 		}
 	}
-	forwarder.logger.Debug("source data copied")
+	forwarder.logger.Debug("source data copied",
+		zap.Duration("took", time.Since(start)),
+		zap.String("bytes_copied", logging.FormatByteCountDecimal(bytesCopied)))
 	return nil
 }
 

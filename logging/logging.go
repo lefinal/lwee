@@ -107,3 +107,21 @@ func SetLogger(newLogger *zap.Logger) {
 func WrapName(name string) string {
 	return fmt.Sprintf("<%s>", name)
 }
+
+// FormatByteCountDecimal formats bytes, e.g., 1024, as decimal with units, e.g.,
+// 1kB.
+//
+// Taken from
+// https://programming.guide/go/formatting-byte-size-to-human-readable-format.html.
+func FormatByteCountDecimal(b int64) string {
+	const unit = 1000
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "kMGTPE"[exp])
+}
