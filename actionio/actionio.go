@@ -96,7 +96,7 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	start = time.Now()
 	var bytesCopied int64
 	go func() {
-		forwarder.logger.Debug("copy data")
+		forwarder.logger.Debug("copy data", zap.Int("source_readers", len(forwarder.readers)))
 		var err error
 		bytesCopied, err = io.Copy(allSourceReaders, forwarder.writer.reader)
 		if err != nil {
@@ -117,7 +117,8 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	}
 	forwarder.logger.Debug("source data copied",
 		zap.Duration("took", time.Since(start)),
-		zap.String("bytes_copied", logging.FormatByteCountDecimal(bytesCopied)))
+		zap.String("bytes_copied", logging.FormatByteCountDecimal(bytesCopied)),
+		zap.Int("source_readers", len(forwarder.readers)))
 	return nil
 }
 
