@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"sync"
+	"time"
 )
 
 // scheduledAction is a wrapper for action.Action that the Scheduler deals with.
@@ -20,6 +21,7 @@ type scheduledAction struct {
 	action       action.Action
 	inputs       []*input
 	outputs      []*output
+	start        time.Time
 	currentPhase action.Phase
 }
 
@@ -212,9 +214,12 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 				}
 				scheduler.m.Unlock()
 				scheduler.logger.Info(fmt.Sprintf("finished action %d/%d",
-					len(scheduler.scheduledActions)-scheduler.remainingActions, len(scheduler.scheduledActions)))
+					len(scheduler.scheduledActions)-scheduler.remainingActions, len(scheduler.scheduledActions)),
+					zap.String("action_name", scheduledAction.action.Name()),
+					zap.Duration("action_took", time.Since(scheduledAction.start)))
 				scheduler.schedule()
 			}()
+			scheduledAction.start = time.Now()
 			done, err := scheduledAction.action.Start(scheduler.ctx)
 			if err != nil {
 				scheduler.cancel(meh.Wrap(err, fmt.Sprintf("start action %q", scheduledAction.action.Name()), nil))
