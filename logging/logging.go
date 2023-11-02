@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"github.com/lefinal/meh"
 	"github.com/lefinal/meh/mehhttp"
 	"github.com/lefinal/meh/mehlog"
@@ -8,6 +9,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	"sync"
 )
+
+func init() {
+	mehlog.OmitErrorMessageField(true)
+}
 
 // NewLogger creates a new zap.Logger. Don't forget to call Sync() on the
 // returned logged before exiting!
@@ -97,4 +102,8 @@ func SetLogger(newLogger *zap.Logger) {
 	loggerMutex.Lock()
 	defer loggerMutex.Unlock()
 	logger = newLogger
+}
+
+func WrapName(name string) string {
+	return fmt.Sprintf("<%s>", name)
 }

@@ -21,7 +21,7 @@ actions:
   #    run:
   #      type: proj-action
   #      actionName: my-action-name
-  #      config: default # Optional. Defaults to default.
+  #      config: default # Optional. Defaults to 'default'.
   #    out:
   #      myActionOutputName:
   #        providedAs: stream

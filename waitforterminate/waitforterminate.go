@@ -4,7 +4,6 @@ package waitforterminate
 
 import (
 	"context"
-	"github.com/lefinal/meh"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,7 +22,7 @@ func Run(runnable Runnable) error {
 	}()
 	err := runnable(ctx)
 	if err != nil {
-		return meh.Wrap(err, "run", nil)
+		return err
 	}
 	return nil
 }

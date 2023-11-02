@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 	"github.com/lefinal/lwee/action"
+	"github.com/lefinal/lwee/actionio"
 	"github.com/lefinal/lwee/container"
 	"github.com/lefinal/lwee/locator"
+	"github.com/lefinal/lwee/logging"
 	"github.com/lefinal/lwee/lweeflowfile"
+	scheduler "github.com/lefinal/lwee/scheduler"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"net"
-	"strconv"
+	"os"
+	"time"
 )
 
 type Config struct {
+	VerifyOnly          bool
+	KeepTemporaryFiles  bool
 	ContainerEngineType container.EngineType
 }
 
@@ -23,42 +29,46 @@ type LWEE struct {
 	config          Config
 	containerEngine container.Engine
 	actionFactory   *action.Factory
-	actions         map[string]action.Action
+	actions         []action.Action
 	flowFile        lweeflowfile.Flow
 	Locator         *locator.Locator
+	ioSupplier      actionio.Supplier
 }
 
+type flowOutput func(ctx context.Context) error
+
 func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locator, config Config) (*LWEE, error) {
-	containerEngine, err := container.NewEngine(config.ContainerEngineType)
+	containerEngine, err := container.NewEngine(logger.Named("container-engine"), config.ContainerEngineType)
 	if err != nil {
 		return nil, meh.Wrap(err, "new container engine", meh.Details{"engine_type": config.ContainerEngineType})
 	}
-	return &LWEE{
+	lwee := &LWEE{
 		logger:          logger,
 		config:          config,
 		containerEngine: containerEngine,
-		actionFactory: &action.Factory{
-			FlowName:        flowFile.Name,
-			Locator:         locator,
-			ContainerEngine: containerEngine,
-		},
-		Locator:  locator,
-		actions:  make(map[string]action.Action),
-		flowFile: flowFile,
-	}, nil
+		Locator:         locator,
+		actions:         make([]action.Action, 0),
+		flowFile:        flowFile,
+		ioSupplier:      actionio.NewSupplier(logger.Named("io")),
+	}
+	lwee.actionFactory = &action.Factory{
+		FlowName:        lwee.flowFile.Name,
+		Locator:         lwee.Locator,
+		ContainerEngine: lwee.containerEngine,
+		IOSupplier:      lwee.ioSupplier,
+	}
+	return lwee, nil
 }
 
 func (lwee *LWEE) Run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	eg, ctx := errgroup.WithContext(ctx)
 	// Create actions.
 	var err error
 	for actionName, actionFile := range lwee.flowFile.Actions {
-		lwee.actions[actionName], err = lwee.actionFactory.NewAction(lwee.logger.Named("action").Named(actionName), actionFile)
+		newAction, err := lwee.actionFactory.NewAction(lwee.logger.Named("action").Named(logging.WrapName(actionName)), actionName, actionFile)
 		if err != nil {
-			return meh.Wrap(err, "create action", meh.Details{"action_name": actionName})
+			return meh.Wrap(err, fmt.Sprintf("create action %q", actionName), meh.Details{"action_name": actionName})
 		}
+		lwee.actions = append(lwee.actions, newAction)
 	}
 	lwee.logger.Info(fmt.Sprintf("loaded %d action(s)", len(lwee.actions)))
 	// Build all actions.
@@ -67,10 +77,75 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	if err != nil {
 		return meh.Wrap(err, "build actions", nil)
 	}
-
-	// TODO
-
-	return eg.Wait()
+	lwee.logger.Info("register io")
+	// Register flow inputs.
+	for inputName, flowInput := range lwee.flowFile.Inputs {
+		err = lwee.registerFlowInput(ctx, inputName, flowInput)
+		if err != nil {
+			return meh.Wrap(err, fmt.Sprintf("register flow input %q", inputName), nil)
+		}
+	}
+	// Register flow outputs.
+	flowOutputs := make([]flowOutput, 0)
+	for outputName, flowOutput := range lwee.flowFile.Outputs {
+		registeredFlowOutput, err := lwee.registerFlowOutput(ctx, outputName, flowOutput)
+		if err != nil {
+			return meh.Wrap(err, fmt.Sprintf("register flow output %q", outputName), nil)
+		}
+		flowOutputs = append(flowOutputs, registeredFlowOutput)
+	}
+	// Prepare scheduler and register IO.
+	actionScheduler, err := scheduler.New(ctx, lwee.logger.Named("scheduler"), lwee.ioSupplier, lwee.actions)
+	if err != nil {
+		return meh.Wrap(err, "setup actions with scheduler", nil)
+	}
+	err = lwee.ioSupplier.Validate()
+	if err != nil {
+		return meh.Wrap(err, "validate io", nil)
+	}
+	lwee.logger.Debug("action io configuration is valid")
+	if lwee.config.VerifyOnly {
+		return nil
+	}
+	// Defer cleanup.
+	defer func() {
+		if lwee.config.KeepTemporaryFiles {
+			lwee.logger.Info(fmt.Sprintf("keeping temporary files in %s", lwee.Locator.ActionTempDir()))
+		} else {
+			lwee.logger.Debug("delete temporary files", zap.String("action_temp_dir", lwee.Locator.ActionTempDir()))
+			_ = os.RemoveAll(lwee.Locator.ActionTempDir())
+		}
+	}()
+	// Run.
+	start := time.Now()
+	lwee.logger.Info("run actions")
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		err := actionScheduler.Run()
+		if err != nil {
+			return meh.Wrap(err, "schedule", nil)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		err := lwee.ioSupplier.Forward(ctx)
+		if err != nil {
+			return meh.Wrap(err, "forward io", nil)
+		}
+		return nil
+	})
+	for _, flowOutput := range flowOutputs {
+		flowOutput := flowOutput
+		eg.Go(func() error {
+			return flowOutput(ctx)
+		})
+	}
+	err = eg.Wait()
+	if err != nil {
+		return meh.Wrap(err, "run actions", nil)
+	}
+	lwee.logger.Info("done", zap.Duration("took", time.Since(start)))
+	return nil
 }
 
 // buildActions builds all actions.
@@ -90,19 +165,6 @@ func (lwee *LWEE) buildActions(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func newMasterNodeListener() (net.Listener, error) {
-	masterNodePort, err := getFreePort()
-	if err != nil {
-		return nil, meh.Wrap(err, "get free port", nil)
-	}
-	listenAddr := net.JoinHostPort("localhost", strconv.Itoa(masterNodePort))
-	listener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "listen", meh.Details{"listen_addr": listenAddr})
-	}
-	return listener, nil
-}
-
 // getFreePort asks the kernel for a free open port that is ready to use.
 func getFreePort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
@@ -116,3 +178,5 @@ func getFreePort() (int, error) {
 	defer func() { _ = listener.Close() }()
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
+
+// TODO: flow outputs and action outputs

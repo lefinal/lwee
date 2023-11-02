@@ -40,7 +40,8 @@ func (f *stringSliceFlag) Set(s string) error {
 func main() {
 	err := waitforterminate.Run(run)
 	if err != nil {
-		mehlog.Log(logging.RootLogger(), meh.Wrap(err, "run", nil))
+		mehlog.Log(logging.RootLogger(), err)
+		_ = logging.RootLogger().Sync()
 		os.Exit(1)
 	}
 }
@@ -49,6 +50,7 @@ func run(ctx context.Context) error {
 	// Parse flags.
 	verboseFlag := flag.Bool("v", false, "Enables debug log output.")
 	flowFilenameFlag := flag.String("f", "", "Flow file to use.")
+	keepTemporaryFiles := flag.Bool("keep-temp", false, "When set, keeps temporary files and omits cleanup.")
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
 		fmt.Println()
@@ -88,10 +90,11 @@ func run(ctx context.Context) error {
 	}()
 	// Run app.
 	err = app.Run(ctx, logger, app.Config{
-		EngineType:   container.EngineType(engineType),
-		Command:      command,
-		FlowFilename: *flowFilenameFlag,
-		ContextDir:   flowContextDir,
+		EngineType:         container.EngineType(engineType),
+		Command:            command,
+		FlowFilename:       *flowFilenameFlag,
+		ContextDir:         flowContextDir,
+		KeepTemporaryFiles: *keepTemporaryFiles,
 	})
 	return err
 }

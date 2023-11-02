@@ -6,7 +6,7 @@ require (
 	github.com/docker/docker v24.0.5+incompatible
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/jackc/pgconn v1.12.0
-	github.com/lefinal/meh v1.10.0
+	github.com/lefinal/meh v1.11.0
 	github.com/lefinal/nulls v1.6.0
 	github.com/stretchr/testify v1.8.3
 	go.uber.org/zap v1.21.0

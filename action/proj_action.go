@@ -3,18 +3,30 @@ package action
 import (
 	"context"
 	"fmt"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/lefinal/lwee/container"
+	"github.com/lefinal/lwee/locator"
 	"github.com/lefinal/lwee/lweeflowfile"
 	"github.com/lefinal/lwee/lweeprojactionfile"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
+	"io"
 	"os"
+	"path"
 	"strings"
+	"sync"
 	"time"
-	"unicode"
 )
 
-func (factory *Factory) newProjectAction(logger *zap.Logger, actionFile lweeflowfile.ActionRunnerProjectAction) (Action, error) {
+type containerState int
+
+const (
+	containerStateReady containerState = iota
+	containerStateRunning
+	containerStateDone
+)
+
+func (factory *Factory) newProjectAction(base *Base, actionFile lweeflowfile.ActionRunnerProjectAction) (action, error) {
 	// Assure action exists.
 	actionDir := factory.Locator.ProjectActionDirByAction(actionFile.Name)
 	_, err := os.Stat(actionDir)
@@ -45,65 +57,244 @@ func (factory *Factory) newProjectAction(logger *zap.Logger, actionFile lweeflow
 		if actionConfig.File == "" {
 			actionConfig.File = "Dockerfile"
 		}
-		return &ProjectActionImage{
-			Logger:          logger,
-			ContainerEngine: factory.ContainerEngine,
-			ContextDir:      actionDir,
-			File:            actionConfig.File,
-			Tag:             projectActionImageTag(factory.FlowName, actionFile.Name),
-			Args:            actionFile.Args,
+		return &projectActionImage{
+			Base:                  base,
+			containerEngine:       factory.ContainerEngine,
+			contextDir:            actionDir,
+			file:                  actionConfig.File,
+			tag:                   projectActionImageTag(factory.FlowName, actionFile.Name),
+			args:                  actionFile.Args,
+			containerWorkspaceDir: path.Join(factory.Locator.ActionTempDirByAction(actionFile.Name), "container-workspace"),
+			containerState:        containerStateReady,
+			containerRunningCond:  sync.NewCond(&sync.Mutex{}),
 		}, nil
 	default:
 		return nil, meh.NewBadInputErr(fmt.Sprintf("unsupported action config: %T", actionConfig), nil)
 	}
 }
 
-// ProjectActionImage is an Action that runs a project action with type image.
-type ProjectActionImage struct {
-	Logger          *zap.Logger
-	ContainerEngine container.Engine
-	ContextDir      string
-	File            string
-	Tag             string
-	Args            string
+// projectActionImage is an Action that runs a project action with type image.
+type projectActionImage struct {
+	*Base
+	containerEngine       container.Engine
+	contextDir            string
+	file                  string
+	tag                   string
+	args                  string
+	containerWorkspaceDir string
+	containerID           string
+	// containerState is the state of the container. It is locked using
+	// containerRunningCond.
+	containerState containerState
+	// containerRunningCond locks containerState.
+	containerRunningCond *sync.Cond
 }
 
-func (action *ProjectActionImage) Build(ctx context.Context) error {
+func (action *projectActionImage) Build(ctx context.Context) error {
 	imageBuildOptions := container.ImageBuildOptions{
-		BuildLogger: action.Logger.Named("build"),
-		Tag:         action.Tag,
-		ContextDir:  action.ContextDir,
-		File:        action.File,
+		BuildLogger: action.logger.Named("build"),
+		Tag:         action.tag,
+		ContextDir:  action.contextDir,
+		File:        action.file,
 	}
 	start := time.Now()
-	action.Logger.Debug("build project action image",
+	action.logger.Debug("build project action image",
 		zap.String("image_tag", imageBuildOptions.Tag),
 		zap.String("context_dir", imageBuildOptions.ContextDir),
 		zap.String("file", imageBuildOptions.File))
-	err := action.ContainerEngine.ImageBuild(ctx, imageBuildOptions)
+	err := action.containerEngine.ImageBuild(ctx, imageBuildOptions)
 	if err != nil {
 		return meh.Wrap(err, "build image", meh.Details{"image_build_options": imageBuildOptions})
 	}
-	action.Logger.Debug("project action image build done", zap.Duration("took", time.Since(start)))
+	action.logger.Debug("project action image build done", zap.Duration("took", time.Since(start)))
+	return nil
+}
+
+func (action *projectActionImage) registerInputIngestionRequests() error {
+	for inputName, input := range action.fileActionInputs {
+		var inputRequest inputIngestionRequestWithIngestor
+		switch input := input.(type) {
+		case lweeflowfile.ActionInputContainerWorkspaceFile:
+			inputRequest = action.newContainerWorkspaceFileInputRequest(input)
+			// TODO: Add wait-flag if input/output has SDK
+		default:
+			return meh.NewBadInputErr(fmt.Sprintf("action input %q has unsupported type: %s", inputName, input.Type()), nil)
+		}
+		inputRequest.request.InputName = inputName
+		action.inputIngestionRequestsByInputName[inputName] = inputRequest
+	}
+	return nil
+}
+
+func (action *projectActionImage) registerOutputProviders() error {
+	stdoutOutputRegistered := false
+	for outputName, output := range action.fileActionOutputs {
+		var outputOffer OutputOfferWithOutputter
+		switch output := output.(type) {
+		case lweeflowfile.ActionOutputStdout:
+			// Assure only one output with stdout-type.
+			if stdoutOutputRegistered {
+				return meh.NewBadInputErr("duplicate stdout outputs. only one is allowed.", nil)
+			}
+			stdoutOutputRegistered = true
+			outputOffer = action.newStdoutOutputOffer()
+		default:
+			return meh.NewBadInputErr(fmt.Sprintf("action output %s has unsupported type: %s", outputName, output.Type()), nil)
+		}
+		outputOffer.offer.OutputName = outputName
+		action.outputOffersByOutputName[outputName] = outputOffer
+
+		// TODO: output stuff. and what to do with outputs that are not needed? who notifies? and we need to distinguish between outputs while running and outputs after having stopped.
+	}
+	return nil
+}
+
+func (action *projectActionImage) newContainerWorkspaceFileInputRequest(input lweeflowfile.ActionInputContainerWorkspaceFile) inputIngestionRequestWithIngestor {
+	return inputIngestionRequestWithIngestor{
+		request: InputIngestionRequest{
+			IngestionPhase: PhasePreStart,
+			SourceName:     input.Source,
+		},
+		ingest: func(ctx context.Context, source io.Reader) error {
+			filename := path.Join(action.containerWorkspaceDir, input.Filename)
+			err := os.MkdirAll(path.Dir(filename), 0750)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
+			}
+			f, err := os.Create(filename)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "create container workspace file", meh.Details{"filename": filename})
+			}
+			defer func() { _ = f.Close() }()
+			_, err = io.Copy(f, source)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "write container workspace file", meh.Details{"filename": filename})
+			}
+			err = f.Close()
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "close written container workspace file", meh.Details{"filename": filename})
+			}
+			return nil
+		},
+	}
+}
+
+func (action *projectActionImage) waitForContainerRunning(ctx context.Context) error {
+	action.containerRunningCond.L.Lock()
+	for {
+		if action.containerState >= containerStateRunning {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return meh.NewBadInputErrFromErr(ctx.Err(), "context done while waiting for container running", nil)
+		default:
+		}
+		action.containerRunningCond.Wait()
+	}
+	action.containerRunningCond.L.Unlock()
+	return nil
+}
+
+func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputter {
+	return OutputOfferWithOutputter{
+		offer: OutputOffer{
+			OutputPhase: PhaseRunning,
+		},
+		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+			defer func() { _ = writer.Close() }()
+			// Wait for container running.
+			err := action.waitForContainerRunning(ctx)
+			if err != nil {
+				return meh.Wrap(err, "wait for container running", nil)
+			}
+			// Open stdout.
+			action.logger.Debug("container now running. opening stdout output.")
+			stdoutReader, err := action.containerEngine.ContainerStdoutLogs(ctx, action.containerID)
+			if err != nil {
+				return meh.Wrap(err, "open container stdout logs", meh.Details{"container_id": action.containerID})
+			}
+			defer func() { _ = stdoutReader.Close() }()
+			// Notify output ready.
+			select {
+			case <-ctx.Done():
+				return meh.NewInternalErrFromErr(ctx.Err(), "notify output open", nil)
+			case ready <- struct{}{}:
+			}
+			// Forward.
+			_, err = stdcopy.StdCopy(writer, io.Discard, stdoutReader)
+			if err != nil {
+				return meh.Wrap(err, "copy stdout logs", nil)
+			}
+			action.logger.Debug("read stdout logs done")
+			return nil
+		},
+	}
+}
+
+func (action *projectActionImage) setContainerState(newState containerState) {
+	action.containerRunningCond.L.Lock()
+	action.containerState = newState
+	action.containerRunningCond.L.Unlock()
+	action.containerRunningCond.Broadcast()
+}
+
+func (action *projectActionImage) Start(ctx context.Context) (<-chan error, error) {
+	var err error
+	containerConfig := container.ContainerConfig{
+		ExposedPorts: nil,
+		VolumeMounts: []container.VolumeMount{
+			{
+				Source: action.containerWorkspaceDir,
+				Target: "/lwee",
+			},
+		},
+		Command: nil,
+		Image:   action.tag,
+	}
+	action.logger.Debug("create container",
+		zap.String("image", action.tag),
+		zap.Any("volumes", containerConfig.VolumeMounts))
+	action.containerID, err = action.containerEngine.CreateContainer(ctx, containerConfig)
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "create container", meh.Details{"container_config": containerConfig})
+	}
+	err = action.containerEngine.StartContainer(ctx, action.containerID)
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "start container", meh.Details{"container_id": action.containerID})
+	}
+	action.setContainerState(containerStateRunning)
+	stopped := make(chan error)
+	go func() {
+		defer func() { _ = action.containerEngine.RemoveContainer(ctx, action.containerID) }()
+		err := action.containerEngine.WaitForContainerStopped(ctx, action.containerID)
+		action.setContainerState(containerStateDone)
+		if err != nil {
+			stopped <- meh.NewInternalErrFromErr(err, "wait for container stopped", meh.Details{"container_id": action.containerID})
+			return
+		}
+		stopped <- nil
+	}()
+	// TODO: wait for sdk if flag is set
+	return stopped, nil
+}
+
+func (action *projectActionImage) Stop(ctx context.Context) error {
+	if action.containerID == "" {
+		return nil
+	}
+	err := action.containerEngine.StopContainer(ctx, action.containerID)
+	if err != nil {
+		return meh.NewInternalErrFromErr(err, "stop container", meh.Details{"container_id": action.containerID})
+	}
 	return nil
 }
 
 func projectActionImageTag(flowName string, actionName string) string {
 	const replaceNonAlphanumericWith = '_'
-	flowName = toAlphanumeric(flowName, replaceNonAlphanumericWith)
+	flowName = locator.ToAlphanumeric(flowName, replaceNonAlphanumericWith)
 	flowName = strings.ToLower(flowName)
-	actionName = toAlphanumeric(actionName, replaceNonAlphanumericWith)
+	actionName = locator.ToAlphanumeric(actionName, replaceNonAlphanumericWith)
 	actionName = strings.ToLower(actionName)
 	return fmt.Sprintf("lwee__%s__%s", flowName, actionName)
-}
-
-func toAlphanumeric(str string, replaceOthersWith rune) string {
-	var out strings.Builder
-	for _, r := range str {
-		if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
-			r = replaceOthersWith
-		}
-		out.WriteRune(r)
-	}
-	return out.String()
 }

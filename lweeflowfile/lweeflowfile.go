@@ -23,12 +23,20 @@ const (
 	FlowInputTypeFile FlowInputType = "file"
 )
 
-type FlowInputs map[string]any
+type FlowInput interface {
+	Type() string
+}
+
+func flowInputConstructor[T FlowInput](t T) FlowInput {
+	return t
+}
+
+type FlowInputs map[string]FlowInput
 
 func (in *FlowInputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*in, err = lweefile.ParseMapBasedOnType(data, map[FlowInputType]lweefile.Unmarshaller{
-		FlowInputTypeFile: lweefile.UnmarshallerFn[FlowInputFile](),
+	*in, err = lweefile.ParseMapBasedOnType(data, map[FlowInputType]lweefile.Unmarshaller[FlowInput]{
+		FlowInputTypeFile: lweefile.UnmarshallerFn[FlowInputFile](flowInputConstructor[FlowInputFile]),
 	}, "providedAs")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)
@@ -37,7 +45,11 @@ func (in *FlowInputs) UnmarshalJSON(data []byte) error {
 }
 
 type FlowInputFile struct {
-	Filepath string `json:"filepath"`
+	Filename string `json:"filename"`
+}
+
+func (input FlowInputFile) Type() string {
+	return string(FlowInputTypeFile)
 }
 
 type FlowOutputType string
@@ -46,12 +58,21 @@ const (
 	FlowOutputTypeFile FlowOutputType = "file"
 )
 
-type FlowOutputs map[string]any
+type FlowOutput interface {
+	SourceName() string
+	Type() string
+}
+
+func flowOutputConstructor[T FlowOutput](t T) FlowOutput {
+	return t
+}
+
+type FlowOutputs map[string]FlowOutput
 
 func (out *FlowOutputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*out, err = lweefile.ParseMapBasedOnType(data, map[FlowOutputType]lweefile.Unmarshaller{
-		FlowOutputTypeFile: lweefile.UnmarshallerFn[FlowOutputFile](),
+	*out, err = lweefile.ParseMapBasedOnType(data, map[FlowOutputType]lweefile.Unmarshaller[FlowOutput]{
+		FlowOutputTypeFile: lweefile.UnmarshallerFn[FlowOutputFile](flowOutputConstructor[FlowOutputFile]),
 	}, "provideAs")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)
@@ -63,9 +84,17 @@ type FlowOutputBase struct {
 	Source string `json:"source"`
 }
 
+func (base FlowOutputBase) SourceName() string {
+	return base.Source
+}
+
 type FlowOutputFile struct {
 	FlowOutputBase
 	Filename string `json:"filename"`
+}
+
+func (output FlowOutputFile) Type() string {
+	return string(FlowOutputTypeFile)
 }
 
 func ParseFlow(rawFlow json.RawMessage) (Flow, error) {

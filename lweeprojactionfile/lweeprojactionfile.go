@@ -19,12 +19,20 @@ type ProjAction struct {
 	Configs ProjActionConfigs `json:"configs"`
 }
 
-type ProjActionConfigs map[string]any
+type ProjActionConfig interface {
+	Type() string
+}
+
+func projActionConfigConstructor[T ProjActionConfig](t T) ProjActionConfig {
+	return t
+}
+
+type ProjActionConfigs map[string]ProjActionConfig
 
 func (config *ProjActionConfigs) UnmarshalJSON(data []byte) error {
 	var err error
-	*config, err = lweefile.ParseMapBasedOnType(data, map[ProjActionType]lweefile.Unmarshaller{
-		ProjActionTypeImage: lweefile.UnmarshallerFn[ProjActionConfigImage](),
+	*config, err = lweefile.ParseMapBasedOnType[ProjActionType, ProjActionConfig](data, map[ProjActionType]lweefile.Unmarshaller[ProjActionConfig]{
+		ProjActionTypeImage: lweefile.UnmarshallerFn[ProjActionConfigImage](projActionConfigConstructor[ProjActionConfigImage]),
 	}, "type")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)
@@ -34,6 +42,10 @@ func (config *ProjActionConfigs) UnmarshalJSON(data []byte) error {
 
 type ProjActionConfigImage struct {
 	File string `json:"file"`
+}
+
+func (config ProjActionConfigImage) Type() string {
+	return string(ProjActionTypeImage)
 }
 
 func ParseAction(rawAction json.RawMessage) (ProjAction, error) {

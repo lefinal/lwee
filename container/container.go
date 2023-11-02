@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
+	"io"
 )
 
 type EngineType string
@@ -16,14 +17,21 @@ const (
 
 type Engine interface {
 	ImageBuild(ctx context.Context, properties ImageBuildOptions) error
+	CreateContainer(ctx context.Context, containerConfig ContainerConfig) (string, error)
+	StartContainer(ctx context.Context, containerID string) error
+	ContainerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error)
+	ContainerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error)
+	StopContainer(ctx context.Context, containerID string) error
+	WaitForContainerStopped(ctx context.Context, containerID string) error
+	RemoveContainer(ctx context.Context, containerID string) error
 }
 
-func NewEngine(engineType EngineType) (Engine, error) {
+func NewEngine(logger *zap.Logger, engineType EngineType) (Engine, error) {
 	var engine Engine
 	var err error
 	switch engineType {
 	case EngineTypeDocker:
-		engine, err = NewDockerEngine()
+		engine, err = NewDockerEngine(logger.Named("docker"))
 		if err != nil {
 			return nil, meh.Wrap(err, "new docker engine", nil)
 		}

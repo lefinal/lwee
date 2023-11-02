@@ -8,6 +8,7 @@ import (
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"path"
+	"time"
 )
 
 const defaultFlowFilename = "flow.yaml"
@@ -19,7 +20,8 @@ type Config struct {
 	ContextDir string
 	// FlowFilename to use. If not set, it will be generated with default values in
 	// Run.
-	FlowFilename string
+	FlowFilename       string
+	KeepTemporaryFiles bool
 }
 
 type command struct {
@@ -43,6 +45,10 @@ var commands = map[string]command{
 }
 
 func Run(ctx context.Context, logger *zap.Logger, config Config) error {
+	start := time.Now()
+	defer func() {
+		logger.Debug("shutdown", zap.Duration("total_command_execution_time", time.Since(start)))
+	}()
 	if config.ContextDir != "" && config.FlowFilename == "" {
 		config.FlowFilename = path.Join(config.ContextDir, defaultFlowFilename)
 	}
