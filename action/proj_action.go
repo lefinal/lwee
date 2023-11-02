@@ -131,6 +131,8 @@ func (action *projectActionImage) registerOutputProviders() error {
 	for outputName, output := range action.fileActionOutputs {
 		var outputOffer OutputOfferWithOutputter
 		switch output := output.(type) {
+		case lweeflowfile.ActionOutputContainerWorkspaceFile:
+			outputOffer = action.newContainerWorkspaceFileOutputOffer(output)
 		case lweeflowfile.ActionOutputStdout:
 			// Assure only one output with stdout-type.
 			if stdoutOutputRegistered {
@@ -179,10 +181,10 @@ func (action *projectActionImage) newContainerWorkspaceFileInputRequest(input lw
 	}
 }
 
-func (action *projectActionImage) waitForContainerRunning(ctx context.Context) error {
+func (action *projectActionImage) waitForPhase(ctx context.Context, state containerState) error {
 	action.containerRunningCond.L.Lock()
 	for {
-		if action.containerState >= containerStateRunning {
+		if action.containerState >= state {
 			break
 		}
 		select {
@@ -196,6 +198,43 @@ func (action *projectActionImage) waitForContainerRunning(ctx context.Context) e
 	return nil
 }
 
+func (action *projectActionImage) newContainerWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputContainerWorkspaceFile) OutputOfferWithOutputter {
+	return OutputOfferWithOutputter{
+		offer: OutputOffer{
+			OutputPhase: PhaseStopped,
+		},
+		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+			defer func() { _ = writer.Close() }()
+			// Wait for container stopped.
+			err := action.waitForPhase(ctx, containerStateDone)
+			if err != nil {
+				return meh.Wrap(err, "wait for container done", nil)
+			}
+			filename := path.Join(action.containerWorkspaceDir, output.Filename)
+			action.logger.Debug("container done. now providing container workspace file output.",
+				zap.String("filename", filename))
+			select {
+			case <-ctx.Done():
+				return meh.NewInternalErrFromErr(ctx.Err(), "notify output ready", nil)
+			case ready <- struct{}{}:
+			}
+			// Copy file.
+			f, err := os.Open(filename)
+			if err != nil {
+				return meh.NewBadInputErrFromErr(err, "open container-workspace output file",
+					meh.Details{"filename": filename})
+			}
+			defer func() { _ = f.Close() }()
+			_, err = io.Copy(writer, f)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "copy container-workspace output file",
+					meh.Details{"filename": filename})
+			}
+			return nil
+		},
+	}
+}
+
 func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputter {
 	return OutputOfferWithOutputter{
 		offer: OutputOffer{
@@ -204,7 +243,7 @@ func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputte
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for container running.
-			err := action.waitForContainerRunning(ctx)
+			err := action.waitForPhase(ctx, containerStateRunning)
 			if err != nil {
 				return meh.Wrap(err, "wait for container running", nil)
 			}
