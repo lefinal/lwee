@@ -1,6 +1,6 @@
 module github.com/lefinal/lwee/lwee
 
-go 1.20
+go 1.21
 
 replace (
 	github.com/lefinal/lwee/proto-go => ../proto-go
