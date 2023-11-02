@@ -1,16 +1,17 @@
-package lweeflowfile
+package lweefile
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/lefinal/meh"
+	"gopkg.in/yaml.v2"
 )
 
 type typeBase[T any] struct {
 	Type T `json:"type"`
 }
 
-func parseMapBasedOnType[T comparable](data []byte, typeMapping map[T]any) (map[string]any, error) {
+func ParseMapBasedOnType[T comparable](data []byte, typeMapping map[T]any) (map[string]any, error) {
 	m := make(map[string]any)
 	// Parse raw JSON.
 	var rawJSONMap map[string]json.RawMessage
@@ -20,7 +21,7 @@ func parseMapBasedOnType[T comparable](data []byte, typeMapping map[T]any) (map[
 	}
 	// Parse type and then the final type.
 	for k, rawJSON := range rawJSONMap {
-		m[k], err = parseBasedOnType(rawJSON, typeMapping)
+		m[k], err = ParseBasedOnType(rawJSON, typeMapping)
 		if err != nil {
 			return nil, meh.Wrap(err, fmt.Sprintf("parse %q based on type", k), nil)
 		}
@@ -28,7 +29,7 @@ func parseMapBasedOnType[T comparable](data []byte, typeMapping map[T]any) (map[
 	return m, nil
 }
 
-func parseBasedOnType[T comparable](data []byte, typeMapping map[T]any) (any, error) {
+func ParseBasedOnType[T comparable](data []byte, typeMapping map[T]any) (any, error) {
 	var typeBase typeBase[T]
 	err := json.Unmarshal(data, &typeBase)
 	if err != nil {
@@ -43,4 +44,17 @@ func parseBasedOnType[T comparable](data []byte, typeMapping map[T]any) (any, er
 		return nil, meh.NewBadInputErrFromErr(err, "parse actual type", nil)
 	}
 	return actualType, nil
+}
+
+func YAMLToJSON(rawYAML []byte) (json.RawMessage, error) {
+	var m map[string]any
+	err := yaml.Unmarshal(rawYAML, &m)
+	if err != nil {
+		return nil, meh.NewBadInputErrFromErr(err, "unmarshal yaml to map", nil)
+	}
+	rawJSON, err := json.Marshal(m)
+	if err != nil {
+		return nil, meh.NewBadInputErrFromErr(err, "marshal json from map", nil)
+	}
+	return rawJSON, nil
 }

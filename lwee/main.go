@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lefinal/lwee/lwee/app"
+	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/input"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/shared-go/waitforterminate"
@@ -15,8 +16,14 @@ import (
 	"os"
 )
 
+const (
+	envContainerEngine = "LWEE_CONTAINER_ENGINE"
+)
+
 //go:embed help.txt
 var helpText string
+
+const defaultEngineType = container.EngineTypeDocker
 
 func main() {
 	err := waitforterminate.Run(run)
@@ -29,9 +36,8 @@ func main() {
 func run(ctx context.Context) error {
 	// Parse flags.
 	verboseFlag := flag.Bool("v", false, "Enables debug log output.")
-	nodeModeFlag := flag.Bool("node", false, "Starts LWEE in node-mode and listens on --listen for incoming connections.")
 	listenFlag := flag.String("listen", ":17733", "Address to listen on in node-mode.")
-	flowFilenameFlag := flag.String("f", app.DefaultFlowFilename, "Flow file to use.")
+	flowFilenameFlag := flag.String("f", "", "Flow file to use.")
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
 		fmt.Println()
@@ -51,6 +57,11 @@ func run(ctx context.Context) error {
 	}
 	defer func() { _ = logger.Sync() }()
 	logging.SetLogger(logger)
+	// Set container engine.
+	engineType, ok := os.LookupEnv(envContainerEngine)
+	if !ok {
+		engineType = string(defaultEngineType)
+	}
 	// Extract context dir.
 	command := ""
 	if len(os.Args) > 1 {
@@ -66,8 +77,8 @@ func run(ctx context.Context) error {
 	}()
 	// Run app.
 	err = app.Run(ctx, logger, app.Config{
-		Command:      app.Command(command),
-		NodeMode:     *nodeModeFlag,
+		EngineType:   container.EngineType(engineType),
+		Command:      command,
 		ListenAddr:   *listenFlag,
 		FlowFilename: *flowFilenameFlag,
 		ContextDir:   flowContextDir,

@@ -2,29 +2,16 @@ package app
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"github.com/lefinal/lwee/lwee/input"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"os"
-	"path"
 )
-
-//go:embed init-flow.yaml
-var defaultFlowFile []byte
 
 // commandInit runs the CommandInit-command.
 func commandInit(ctx context.Context, logger *zap.Logger, config Config) error {
-	// Assure context directory is set and exists.
-	if config.ContextDir == "" {
-		return meh.NewBadInputErr("missing context directory", nil)
-	}
-	_, err := os.Stat(config.ContextDir)
-	if err != nil {
-		return meh.NewBadInputErrFromErr(err, "stat context directory", meh.Details{"context_dir": config.ContextDir})
-	}
 	// Check if the directory is empty. Otherwise, request confirmation from the
 	// user.
 	contextDirEntries, err := os.ReadDir(config.ContextDir)
@@ -43,7 +30,7 @@ func commandInit(ctx context.Context, logger *zap.Logger, config Config) error {
 		}
 		logger.Debug("potential overwrite confirmed")
 	}
-	err = createInitFiles(logger, config.ContextDir)
+	err = createInitFiles(logger)
 	if err != nil {
 		return meh.Wrap(err, "create init files", nil)
 	}
@@ -52,16 +39,10 @@ func commandInit(ctx context.Context, logger *zap.Logger, config Config) error {
 }
 
 // createInitFiles creates the files for commandInit.
-func createInitFiles(logger *zap.Logger, contextDir string) error {
-	err := locator.Init(logger, contextDir)
+func createInitFiles(logger *zap.Logger) error {
+	err := locator.Default().InitProject(logger)
 	if err != nil {
 		return meh.Wrap(err, "locator init", nil)
-	}
-	// Create flow file.
-	flowFilename := path.Join(contextDir, DefaultFlowFilename)
-	err = locator.CreateIfNotExists(flowFilename, defaultFlowFile)
-	if err != nil {
-		return meh.Wrap(err, "create default flow file", meh.Details{"filename": flowFilename})
 	}
 	return nil
 }

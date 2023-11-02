@@ -1,6 +1,9 @@
 package lweeflowfile
 
-import "github.com/lefinal/meh"
+import (
+	"github.com/lefinal/lwee/lwee/lweefile"
+	"github.com/lefinal/meh"
+)
 
 type Action struct {
 	Description string        `json:"description"`
@@ -22,7 +25,7 @@ type ActionInputs map[string]any
 
 func (in *ActionInputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*in, err = parseMapBasedOnType(data, map[ActionInputType]any{
+	*in, err = lweefile.ParseMapBasedOnType(data, map[ActionInputType]any{
 		ActionInputTypeContainerWorkspaceFile: ActionInputContainerWorkspaceFile{},
 		ActionInputTypeFile:                   ActionInputFile{},
 		ActionInputTypeStdin:                  ActionInputStdin{},
@@ -70,7 +73,7 @@ type ActionRunner struct {
 
 func (runner *ActionRunner) UnmarshalJSON(data []byte) error {
 	var err error
-	runner.Runner, err = parseBasedOnType(data, map[ActionRunnerType]any{
+	runner.Runner, err = lweefile.ParseBasedOnType(data, map[ActionRunnerType]any{
 		ActionRunnerTypeCommand:       ActionRunnerCommand{},
 		ActionRunnerTypeImage:         ActionRunnerImage{},
 		ActionRunnerTypeProjectAction: ActionRunnerProjectAction{},
@@ -115,7 +118,7 @@ type ActionOutputs map[string]any
 
 func (out *ActionOutputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*out, err = parseMapBasedOnType(data, map[ActionOutputType]any{
+	*out, err = lweefile.ParseMapBasedOnType(data, map[ActionOutputType]any{
 		ActionOutputTypeContainerWorkspaceFile: ActionOutputContainerWorkspaceFile{},
 		ActionOutputTypeStdout:                 ActionOutputStdout{},
 		ActionOutputTypeStream:                 ActionOutputStream{},

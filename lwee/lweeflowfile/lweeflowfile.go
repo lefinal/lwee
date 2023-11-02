@@ -2,17 +2,18 @@ package lweeflowfile
 
 import (
 	"encoding/json"
+	"github.com/lefinal/lwee/lwee/lweefile"
 	"github.com/lefinal/meh"
-	"gopkg.in/yaml.v2"
 	"os"
 	"strings"
 )
 
 type Flow struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Inputs      FlowInputs  `json:"in"`
-	Outputs     FlowOutputs `json:"out"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Inputs      FlowInputs        `json:"in"`
+	Actions     map[string]Action `json:"actions"`
+	Outputs     FlowOutputs       `json:"out"`
 }
 
 type FlowInputType string
@@ -25,7 +26,7 @@ type FlowInputs map[string]any
 
 func (in *FlowInputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*in, err = parseMapBasedOnType(data, map[FlowInputType]any{
+	*in, err = lweefile.ParseMapBasedOnType(data, map[FlowInputType]any{
 		FlowInputTypeFile: FlowInputFile{},
 	})
 	if err != nil {
@@ -48,7 +49,7 @@ type FlowOutputs map[string]any
 
 func (out *FlowOutputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*out, err = parseMapBasedOnType(data, map[FlowOutputType]any{
+	*out, err = lweefile.ParseMapBasedOnType(data, map[FlowOutputType]any{
 		FlowOutputTypeFile: FlowOutputFile{},
 	})
 	if err != nil {
@@ -75,19 +76,6 @@ func ParseFlow(rawFlow json.RawMessage) (Flow, error) {
 	return flow, nil
 }
 
-func yamlToJSON(rawYAML []byte) (json.RawMessage, error) {
-	var m map[string]any
-	err := yaml.Unmarshal(rawYAML, &m)
-	if err != nil {
-		return nil, meh.NewBadInputErrFromErr(err, "unmarshal yaml to map", nil)
-	}
-	rawJSON, err := json.Marshal(m)
-	if err != nil {
-		return nil, meh.NewBadInputErrFromErr(err, "marshal json from map", nil)
-	}
-	return rawJSON, nil
-}
-
 func FromFile(filename string) (Flow, error) {
 	// Read file contents.
 	rawFlow, err := os.ReadFile(filename)
@@ -97,7 +85,7 @@ func FromFile(filename string) (Flow, error) {
 	var rawFlowJSON json.RawMessage
 	// If YAML, we need to convert to JSON.
 	if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
-		rawFlowJSON, err = yamlToJSON(rawFlowJSON)
+		rawFlowJSON, err = lweefile.YAMLToJSON(rawFlowJSON)
 		if err != nil {
 			return Flow{}, meh.Wrap(err, "yaml to json", nil)
 		}

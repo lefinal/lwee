@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/lefinal/meh"
 	"os"
 	"strings"
 )
@@ -59,5 +60,25 @@ func RequestConfirm(ctx context.Context, prompt string, defaultValue bool) (bool
 			return false, nil
 		}
 		// No valid answer was provided. Repeat.
+	}
+}
+
+// RequestInput prompt the user with the given one for an input.
+//
+// The provided prompt should be in the format of "Enter xyz". RequestInput will
+// append colons.
+func RequestInput(ctx context.Context, prompt string, allowEmpty bool) (string, error) {
+	for {
+		fmt.Print(fmt.Sprintf("%s: ", prompt))
+		var answer string
+		select {
+		case <-ctx.Done():
+			return "", meh.ApplyCode(ctx.Err(), meh.ErrInternal)
+		case answer = <-readLine:
+		}
+		if answer != "" || allowEmpty {
+			return answer, nil
+		}
+		fmt.Println("Please provide a non-empty value.")
 	}
 }
