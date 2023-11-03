@@ -34,6 +34,12 @@ type dockerEngine struct {
 	// the same image can be avoided.
 	buildsInProgressByTag     map[string]struct{}
 	buildsInProgressByTagCond *sync.Cond
+	// createdContainersByID holds container configurations by their assigned
+	// container id. This is useful for more verbose log output like including image
+	// names.
+	createdContainersByID map[string]Config
+	// createdContainersByIDMutex locks createdContainersByID.
+	createdContainersByIDMutex sync.RWMutex
 }
 
 // NewDockerEngine creates a new docker Engine.
@@ -47,7 +53,20 @@ func NewDockerEngine(logger *zap.Logger) (Engine, error) {
 		dockerClient:              dockerClient,
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),
+		createdContainersByID:     map[string]Config{},
 	}, nil
+}
+
+func (engine *dockerEngine) containerConfigByID(containerID string) Config {
+	engine.createdContainersByIDMutex.RLock()
+	defer engine.createdContainersByIDMutex.RUnlock()
+	config, ok := engine.createdContainersByID[containerID]
+	if ok {
+		return config
+	}
+	return Config{
+		Image: "<unknown>",
+	}
 }
 
 func (engine *dockerEngine) ImageBuild(ctx context.Context, buildOptions ImageBuildOptions) error {
@@ -108,7 +127,7 @@ func (engine *dockerEngine) ImageBuild(ctx context.Context, buildOptions ImageBu
 	builtErrorDetails := ""
 	lineScanner := bufio.NewScanner(result.Body)
 	var buildLog bytes.Buffer
-	buildLog.WriteString("\n")
+	buildLog.WriteString("\n\n")
 	for lineScanner.Scan() {
 		// Parse entry.
 		var logEntry dockerBuildLogEntry
@@ -188,6 +207,9 @@ func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig
 		})
 	}
 	engine.logger.Debug("container created", zap.String("container_id", response.ID))
+	engine.createdContainersByIDMutex.Lock()
+	engine.createdContainersByID[response.ID] = containerConfig
+	engine.createdContainersByIDMutex.Unlock()
 	return response.ID, nil
 }
 
@@ -264,7 +286,9 @@ func (engine *dockerEngine) WaitForContainerStopped(ctx context.Context, contain
 	case err := <-errCh:
 		return meh.NewInternalErrFromErr(err, "container wait for not running", nil)
 	case response := <-statusCh:
-		engine.logger.Debug("container now stopped", zap.String("container_id", containerID))
+		engine.logger.Debug("container now stopped",
+			zap.String("container_id", containerID),
+			zap.String("image_name", engine.containerConfigByID(containerID).Image))
 		if response.StatusCode != 0 {
 			var errorReportBuilder strings.Builder
 			errorReportBuilder.WriteString(fmt.Sprintf("container %s exited with code %d",
@@ -277,8 +301,11 @@ func (engine *dockerEngine) WaitForContainerStopped(ctx context.Context, contain
 				_, _ = io.Copy(&errorReportBuilder, stderrLogs)
 				errorReportBuilder.WriteString("\n******** end of stderr logs ********\n")
 			}
-			engine.logger.Error(errorReportBuilder.String(), zap.Error(openStderrErr))
-			return meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", response.StatusCode), nil)
+			engine.logger.Error(errorReportBuilder.String(),
+				zap.String("image_name", engine.containerConfigByID(containerID).Image),
+				zap.Error(openStderrErr))
+			return meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", response.StatusCode),
+				meh.Details{"image_name": engine.containerConfigByID(containerID).Image})
 		}
 	}
 	return nil
@@ -290,5 +317,6 @@ func (engine *dockerEngine) RemoveContainer(ctx context.Context, containerID str
 	if err != nil {
 		return meh.NewInternalErrFromErr(err, "docker container remove", nil)
 	}
+	engine.logger.Debug("container removed", zap.String("container_id", containerID))
 	return nil
 }

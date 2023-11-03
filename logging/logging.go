@@ -93,7 +93,7 @@ func RootLogger() *zap.Logger {
 	if logger == nil {
 		logger, _ = NewLogger(zap.InfoLevel)
 	}
-	return logger.Named("debug")
+	return logger
 }
 
 // SetLogger sets the logger that is used for reporting errors in main as well as
