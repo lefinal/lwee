@@ -27,30 +27,30 @@ const (
 	containerStateDone
 )
 
-func (factory *Factory) newProjectAction(base *Base, actionFile lweeflowfile.ActionRunnerProjectAction) (action, error) {
+func (factory *Factory) newProjectAction(base *Base, projectActionDetails lweeflowfile.ActionRunnerProjectAction) (action, error) {
 	// Assure action exists.
-	actionDir := factory.Locator.ProjectActionDirByAction(actionFile.Name)
+	actionDir := factory.Locator.ProjectActionDirByAction(projectActionDetails.Name)
 	_, err := os.Stat(actionDir)
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "stat action dir", meh.Details{"action_dir": actionDir})
 	}
-	actionLocator := factory.Locator.ProjectActionLocatorByAction(actionFile.Name)
+	actionLocator := factory.Locator.ProjectActionLocatorByAction(projectActionDetails.Name)
 	// Read action.
 	projectActionFile, err := lweeprojactionfile.FromFile(actionLocator.ActionFilename())
 	if err != nil {
 		return nil, meh.Wrap(err, "project action file from file",
 			meh.Details{"filename": actionLocator.ActionFilename()})
 	}
-	if actionFile.Config == "" {
-		actionFile.Config = "default"
+	if projectActionDetails.Config == "" {
+		projectActionDetails.Config = "default"
 	}
-	actionConfig, ok := projectActionFile.Configs[actionFile.Config]
+	actionConfig, ok := projectActionFile.Configs[projectActionDetails.Config]
 	if !ok {
 		knownConfigs := make([]string, 0)
 		for configName := range projectActionFile.Configs {
 			knownConfigs = append(knownConfigs, configName)
 		}
-		return nil, meh.NewBadInputErr(fmt.Sprintf("unknown action config: %s", actionFile.Config),
+		return nil, meh.NewBadInputErr(fmt.Sprintf("unknown action config: %s", projectActionDetails.Config),
 			meh.Details{"known_configs": knownConfigs})
 	}
 	// Create actual action.
@@ -64,9 +64,9 @@ func (factory *Factory) newProjectAction(base *Base, actionFile lweeflowfile.Act
 			containerEngine:       factory.ContainerEngine,
 			contextDir:            actionDir,
 			file:                  actionConfig.File,
-			tag:                   projectActionImageTag(factory.FlowName, actionFile.Name),
-			args:                  actionFile.Args,
-			containerWorkspaceDir: path.Join(factory.Locator.ActionTempDirByAction(actionFile.Name), "container-workspace"),
+			tag:                   projectActionImageTag(factory.FlowName, projectActionDetails.Name),
+			args:                  projectActionDetails.Args,
+			containerWorkspaceDir: path.Join(factory.Locator.ActionTempDirByAction(base.actionName), "container-workspace"),
 			containerState:        containerStateReady,
 			containerRunningCond:  sync.NewCond(&sync.Mutex{}),
 		}
