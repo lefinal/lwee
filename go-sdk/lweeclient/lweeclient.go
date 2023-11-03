@@ -1,6 +1,7 @@
 package lweeclient
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"github.com/lefinal/lwee/go-sdk/waitforterminate"
@@ -9,6 +10,8 @@ import (
 	"io"
 	"sync"
 )
+
+const DefaultOutputBufferSize = 16 * 1024 * 1024 // 16MB
 
 type InputReader interface {
 	WaitForOpen(ctx context.Context) error
@@ -88,26 +91,28 @@ const (
 )
 
 type outputStream struct {
-	writerForApp    io.WriteCloser
-	readerForServer io.Reader
-	state           outputStreamState
-	writerErr       error
+	writerForApp         io.Closer
+	bufferedWriterForApp *bufio.Writer
+	readerForServer      io.Reader
+	state                outputStreamState
+	writerErr            error
 	// stateCond locks state and writerErr.
 	stateCond *sync.Cond
 }
 
-func newOutputStream() *outputStream {
+func newOutputStream(bufferSize int) *outputStream {
 	pipeReader, pipeWriter := io.Pipe()
 	return &outputStream{
-		writerForApp:    pipeWriter,
-		readerForServer: pipeReader,
-		state:           outputStreamStateWaitForOpen,
-		stateCond:       sync.NewCond(&sync.Mutex{}),
+		writerForApp:         pipeWriter,
+		bufferedWriterForApp: bufio.NewWriterSize(pipeWriter, bufferSize),
+		readerForServer:      pipeReader,
+		state:                outputStreamStateWaitForOpen,
+		stateCond:            sync.NewCond(&sync.Mutex{}),
 	}
 }
 
 func (output *outputStream) Write(p []byte) (n int, err error) {
-	return output.writerForApp.Write(p)
+	return output.bufferedWriterForApp.Write(p)
 }
 
 func (output *outputStream) Open() error {
@@ -122,6 +127,7 @@ func (output *outputStream) Open() error {
 }
 
 func (output *outputStream) Close(err error) {
+	_ = output.bufferedWriterForApp.Flush()
 	output.stateCond.L.Lock()
 	defer output.stateCond.L.Unlock()
 	defer func() { _ = output.writerForApp.Close() }()
@@ -143,17 +149,23 @@ type client struct {
 	cancel                    context.CancelCauseFunc
 	serving                   bool
 	listenAddr                string
+	outputBufferSize          int
 	inputStreamsByStreamName  map[string]*inputStream
 	outputStreamsByStreamName map[string]*outputStream
 	m                         sync.Mutex
 }
 
 type Options struct {
-	Logger     *zap.Logger
-	ListenAddr string
+	Logger           *zap.Logger
+	ListenAddr       string
+	OutputBufferSize int
 }
 
 func New(options Options) Client {
+	const minBufferSize = 32 * 1024
+	if options.OutputBufferSize <= minBufferSize {
+		options.OutputBufferSize = DefaultOutputBufferSize
+	}
 	lifetime, cancel := context.WithCancelCause(waitforterminate.Lifetime(context.Background()))
 	c := &client{
 		lifetime:                  lifetime,
@@ -161,6 +173,7 @@ func New(options Options) Client {
 		logger:                    zap.NewNop(),
 		serving:                   false,
 		listenAddr:                ":17733",
+		outputBufferSize:          options.OutputBufferSize,
 		inputStreamsByStreamName:  make(map[string]*inputStream),
 		outputStreamsByStreamName: make(map[string]*outputStream),
 	}
@@ -200,7 +213,7 @@ func (c *client) ProvideOutputStream(streamName string) (OutputWriter, error) {
 	if _, ok := c.outputStreamsByStreamName[streamName]; ok {
 		return nil, meh.NewBadInputErr(fmt.Sprintf("duplicate providing of output stream: %s", streamName), nil)
 	}
-	stream := newOutputStream()
+	stream := newOutputStream(c.outputBufferSize)
 	c.outputStreamsByStreamName[streamName] = stream
 	return stream, nil
 }

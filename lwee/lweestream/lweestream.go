@@ -22,6 +22,8 @@ const connectCooldown = 200 * time.Millisecond
 
 const DefaultTargetPort = "17733"
 
+const defaultHTTPBufferSize = 1024 * 1024
+
 type Connector interface {
 	RegisterStreamInputOffer(streamName string) error
 	RegisterStreamOutputRequest(streamName string) error
@@ -48,12 +50,27 @@ type connector struct {
 }
 
 func NewConnector(logger *zap.Logger) Connector {
+	netDialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	httpRoundTripper := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           netDialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		WriteBufferSize:       defaultHTTPBufferSize,
+		ReadBufferSize:        defaultHTTPBufferSize,
+	}
 	return &connector{
 		logger:                          logger,
 		offeredInputStreamsToTarget:     make(map[string]bool),
 		expectedOutputStreamsFromTarget: make(map[string]bool),
 		streamInputsOutputsCond:         sync.NewCond(&sync.Mutex{}),
-		httpClient:                      &http.Client{},
+		httpClient:                      &http.Client{Transport: httpRoundTripper},
 	}
 }
 
