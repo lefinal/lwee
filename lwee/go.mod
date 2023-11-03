@@ -1,4 +1,4 @@
-module github.com/lefinal/lwee
+module github.com/lefinal/lwee/lwee
 
 go 1.21
 

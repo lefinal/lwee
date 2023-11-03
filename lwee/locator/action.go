@@ -1,7 +1,7 @@
 package locator
 
 import (
-	"github.com/lefinal/lwee/defaults"
+	"github.com/lefinal/lwee/lwee/defaults"
 	"github.com/lefinal/meh"
 	"os"
 	"path"

@@ -3,9 +3,9 @@ package lwee
 import (
 	"context"
 	"fmt"
-	"github.com/lefinal/lwee/actionio"
-	"github.com/lefinal/lwee/logging"
-	"github.com/lefinal/lwee/lweeflowfile"
+	"github.com/lefinal/lwee/lwee/actionio"
+	"github.com/lefinal/lwee/lwee/logging"
+	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/meh"
 	"github.com/lefinal/meh/mehlog"
 	"go.uber.org/zap"

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/lefinal/lwee/container"
-	"github.com/lefinal/lwee/locator"
+	"github.com/lefinal/lwee/lwee/container"
+	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"path"

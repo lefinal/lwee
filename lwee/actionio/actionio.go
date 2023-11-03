@@ -3,7 +3,7 @@ package actionio
 import (
 	"context"
 	"fmt"
-	"github.com/lefinal/lwee/logging"
+	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"

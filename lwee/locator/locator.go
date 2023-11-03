@@ -2,7 +2,7 @@ package locator
 
 import (
 	"bytes"
-	"github.com/lefinal/lwee/defaults"
+	"github.com/lefinal/lwee/lwee/defaults"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"io"

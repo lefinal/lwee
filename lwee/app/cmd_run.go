@@ -2,9 +2,9 @@ package app
 
 import (
 	"context"
-	"github.com/lefinal/lwee/locator"
-	"github.com/lefinal/lwee/lwee"
-	"github.com/lefinal/lwee/lweeflowfile"
+	"github.com/lefinal/lwee/lwee/locator"
+	"github.com/lefinal/lwee/lwee/lwee"
+	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 )

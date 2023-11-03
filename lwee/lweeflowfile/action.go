@@ -1,7 +1,7 @@
 package lweeflowfile
 
 import (
-	"github.com/lefinal/lwee/lweefile"
+	"github.com/lefinal/lwee/lwee/lweefile"
 	"github.com/lefinal/meh"
 )
 

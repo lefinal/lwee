@@ -2,7 +2,7 @@ package lweeprojactionfile
 
 import (
 	"encoding/json"
-	"github.com/lefinal/lwee/lweefile"
+	"github.com/lefinal/lwee/lwee/lweefile"
 	"github.com/lefinal/meh"
 	"os"
 	k8syaml "sigs.k8s.io/yaml"
