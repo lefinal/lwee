@@ -144,7 +144,7 @@ func (engine *dockerEngine) ImageBuild(ctx context.Context, buildOptions ImageBu
 	return nil
 }
 
-type ContainerConfig struct {
+type Config struct {
 	ExposedPorts nat.PortSet
 	VolumeMounts []VolumeMount
 	Command      []string
@@ -156,13 +156,15 @@ type VolumeMount struct {
 	Target string
 }
 
-func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig ContainerConfig) (string, error) {
+func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig Config) (string, error) {
 	// Build container config.
 	dockerContainerConfig := &dockercontainer.Config{
 		ExposedPorts: containerConfig.ExposedPorts,
 		Cmd:          containerConfig.Command,
 		Image:        containerConfig.Image,
 	}
+	dockerContainerConfig.StdinOnce = true
+	dockerContainerConfig.OpenStdin = true
 	dockerContainerHostConfig := &dockercontainer.HostConfig{
 		Mounts: make([]mount.Mount, 0),
 	}
@@ -196,6 +198,32 @@ func (engine *dockerEngine) StartContainer(ctx context.Context, containerID stri
 		return meh.NewInternalErrFromErr(err, "start container", nil)
 	}
 	return nil
+}
+
+type containerStdinWriteCloser struct {
+	hijackedResponse dockertypes.HijackedResponse
+}
+
+func (writeCloser *containerStdinWriteCloser) Write(p []byte) (int, error) {
+	return writeCloser.hijackedResponse.Conn.Write(p)
+}
+
+func (writeCloser *containerStdinWriteCloser) Close() error {
+	if err := writeCloser.hijackedResponse.CloseWrite(); err != nil {
+		return err
+	}
+	return writeCloser.hijackedResponse.Conn.Close()
+}
+
+func (engine *dockerEngine) ContainerStdin(ctx context.Context, containerID string) (io.WriteCloser, error) {
+	response, err := engine.dockerClient.ContainerAttach(ctx, containerID, dockertypes.ContainerAttachOptions{
+		Stdin:  true,
+		Stream: true,
+	})
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "container attach", nil)
+	}
+	return &containerStdinWriteCloser{hijackedResponse: response}, nil
 }
 
 func (engine *dockerEngine) ContainerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {

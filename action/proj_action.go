@@ -6,6 +6,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/lefinal/lwee/container"
 	"github.com/lefinal/lwee/locator"
+	"github.com/lefinal/lwee/logging"
 	"github.com/lefinal/lwee/lweeflowfile"
 	"github.com/lefinal/lwee/lweeprojactionfile"
 	"github.com/lefinal/meh"
@@ -52,12 +53,13 @@ func (factory *Factory) newProjectAction(base *Base, actionFile lweeflowfile.Act
 		return nil, meh.NewBadInputErr(fmt.Sprintf("unknown action config: %s", actionFile.Config),
 			meh.Details{"known_configs": knownConfigs})
 	}
+	// Create actual action.
 	switch actionConfig := actionConfig.(type) {
 	case lweeprojactionfile.ProjActionConfigImage:
 		if actionConfig.File == "" {
 			actionConfig.File = "Dockerfile"
 		}
-		return &projectActionImage{
+		projectActionImage := &projectActionImage{
 			Base:                  base,
 			containerEngine:       factory.ContainerEngine,
 			contextDir:            actionDir,
@@ -67,7 +69,13 @@ func (factory *Factory) newProjectAction(base *Base, actionFile lweeflowfile.Act
 			containerWorkspaceDir: path.Join(factory.Locator.ActionTempDirByAction(actionFile.Name), "container-workspace"),
 			containerState:        containerStateReady,
 			containerRunningCond:  sync.NewCond(&sync.Mutex{}),
-		}, nil
+		}
+		err := os.MkdirAll(projectActionImage.containerWorkspaceDir, 0750)
+		if err != nil {
+			return nil, meh.NewInternalErrFromErr(err, "create container workspace dir",
+				meh.Details{"dir": projectActionImage.containerWorkspaceDir})
+		}
+		return projectActionImage, nil
 	default:
 		return nil, meh.NewBadInputErr(fmt.Sprintf("unsupported action config: %T", actionConfig), nil)
 	}
@@ -111,11 +119,19 @@ func (action *projectActionImage) Build(ctx context.Context) error {
 }
 
 func (action *projectActionImage) registerInputIngestionRequests() error {
+	stdinInputRegistered := false
 	for inputName, input := range action.fileActionInputs {
 		var inputRequest inputIngestionRequestWithIngestor
 		switch input := input.(type) {
 		case lweeflowfile.ActionInputContainerWorkspaceFile:
 			inputRequest = action.newContainerWorkspaceFileInputRequest(input)
+		case lweeflowfile.ActionInputStdin:
+			// Assure only one input with stdin-type.
+			if stdinInputRegistered {
+				return meh.NewBadInputErr("duplicate stdin inputs. only one is allowed", nil)
+			}
+			stdinInputRegistered = true
+			inputRequest = action.newStdinInputRequest(input)
 			// TODO: Add wait-flag if input/output has SDK
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action input %q has unsupported type: %s", inputName, input.Type()), nil)
@@ -176,6 +192,42 @@ func (action *projectActionImage) newContainerWorkspaceFileInputRequest(input lw
 			if err != nil {
 				return meh.NewInternalErrFromErr(err, "close written container workspace file", meh.Details{"filename": filename})
 			}
+			return nil
+		},
+	}
+}
+
+func (action *projectActionImage) newStdinInputRequest(input lweeflowfile.ActionInputStdin) inputIngestionRequestWithIngestor {
+	return inputIngestionRequestWithIngestor{
+		request: InputIngestionRequest{
+			IngestionPhase: PhaseRunning,
+			SourceName:     input.Source,
+		},
+		ingest: func(ctx context.Context, source io.Reader) error {
+			// Wait for container running.
+			err := action.waitForPhase(ctx, containerStateRunning)
+			if err != nil {
+				return meh.Wrap(err, "wait for container running", nil)
+			}
+			// Pipe to stdin.
+			action.logger.Debug("pipe input to container stdin", zap.String("source_name", input.Source))
+			containerStdin, err := action.containerEngine.ContainerStdin(ctx, action.containerID)
+			if err != nil {
+				return meh.Wrap(err, "open container stdin", meh.Details{"container_id": action.containerID})
+			}
+			defer func() { _ = containerStdin.Close() }()
+			start := time.Now()
+			n, err := io.Copy(containerStdin, source)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "copy to stdin", nil)
+			}
+			err = containerStdin.Close()
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "close container stdin", nil)
+			}
+			action.logger.Debug("completed piping input to container stdin",
+				zap.Duration("took", time.Since(start)),
+				zap.String("bytes_copied", logging.FormatByteCountDecimal(n)))
 			return nil
 		},
 	}
@@ -280,7 +332,7 @@ func (action *projectActionImage) setContainerState(newState containerState) {
 
 func (action *projectActionImage) Start(ctx context.Context) (<-chan error, error) {
 	var err error
-	containerConfig := container.ContainerConfig{
+	containerConfig := container.Config{
 		ExposedPorts: nil,
 		VolumeMounts: []container.VolumeMount{
 			{

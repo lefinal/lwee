@@ -17,8 +17,9 @@ const (
 
 type Engine interface {
 	ImageBuild(ctx context.Context, properties ImageBuildOptions) error
-	CreateContainer(ctx context.Context, containerConfig ContainerConfig) (string, error)
+	CreateContainer(ctx context.Context, containerConfig Config) (string, error)
 	StartContainer(ctx context.Context, containerID string) error
+	ContainerStdin(ctx context.Context, containerID string) (io.WriteCloser, error)
 	ContainerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error)
 	ContainerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error)
 	StopContainer(ctx context.Context, containerID string) error
