@@ -59,7 +59,7 @@ type input struct {
 type output struct {
 	offer  action.OutputOffer
 	done   bool
-	source actionio.SourceProvider
+	source actionio.SourceWriter
 }
 
 type Scheduler struct {
@@ -190,7 +190,6 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 			}
 		}
 		if liveInputsNotBeingReady > 0 && liveInputsBeingReady == 0 {
-			scheduler.logger.Debug("waiting for first live input", zap.Int("live_inputs_not_being_ready", liveInputsNotBeingReady))
 			return false, nil
 		}
 		// Ready.
@@ -279,7 +278,7 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 			for _, output := range outputProvidersNotDoneForPhase {
 				waitingForOutputs = append(waitingForOutputs, output.offer.OutputName)
 			}
-			logger.Debug("waiting for action output offer in stopped phase to finish",
+			logger.Debug("waiting for action output in stopped phase to finish",
 				zap.Strings("waiting_for_outputs", waitingForOutputs))
 			return false, nil
 		}

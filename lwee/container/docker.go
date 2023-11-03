@@ -222,6 +222,14 @@ func (engine *dockerEngine) StartContainer(ctx context.Context, containerID stri
 	return nil
 }
 
+func (engine *dockerEngine) ContainerIP(ctx context.Context, containerID string) (string, error) {
+	containerDetails, err := engine.dockerClient.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", meh.NewInternalErrFromErr(err, "docker container inspect", nil)
+	}
+	return containerDetails.NetworkSettings.IPAddress, nil
+}
+
 type containerStdinWriteCloser struct {
 	hijackedResponse dockertypes.HijackedResponse
 }
@@ -281,6 +289,34 @@ func (engine *dockerEngine) StopContainer(ctx context.Context, containerID strin
 }
 
 func (engine *dockerEngine) WaitForContainerStopped(ctx context.Context, containerID string) error {
+	// If the container exited due to an error, we might want to read error logs from
+	// it. However, if, for example, streams are used, action IO will lead to earlier
+	// errors and therefore the passed context is done. Therefore, we start a
+	// goroutine that waits with a timeout for the container to stop if the given
+	// context is canceled in order to log error results.
+	gotResultWithContextErr := make(chan error)
+	defer func() { gotResultWithContextErr <- ctx.Err() }()
+	go func() {
+		contextErr := <-gotResultWithContextErr
+		if contextErr == nil {
+			// Context not done. Nothing to do.
+			return
+		}
+		// Context was canceled.
+		const waitTimeoutDur = 3 * time.Second
+		timeout, cancel := context.WithTimeout(context.Background(), waitTimeoutDur)
+		defer cancel()
+		err := engine.waitForContainerStopped(timeout, containerID)
+		if err != nil {
+			mehlog.Log(engine.logger, meh.Wrap(err, "wait for container stopped", meh.Details{"container_id": containerID}))
+			return
+		}
+	}()
+
+	return engine.waitForContainerStopped(ctx, containerID)
+}
+
+func (engine *dockerEngine) waitForContainerStopped(ctx context.Context, containerID string) error {
 	statusCh, errCh := engine.dockerClient.ContainerWait(ctx, containerID, dockercontainer.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:

@@ -37,7 +37,6 @@ func (lwee *LWEE) registerFlowInput(ctx context.Context, inputName string, flowI
 				return
 			}
 		}()
-		// TODO: add others
 	default:
 		return meh.NewBadInputErr(fmt.Sprintf("unsupported flow input type: %T", flowInput), nil)
 	}
@@ -113,7 +112,7 @@ func assureFileExists(filename string) error {
 	return nil
 }
 
-func provideFileSource(ctx context.Context, filename string, sourceProvider actionio.SourceProvider) error {
+func provideFileSource(ctx context.Context, filename string, sourceProvider actionio.SourceWriter) error {
 	defer func() { _ = sourceProvider.Writer.Close() }()
 	f, err := os.Open(filename)
 	if err != nil {

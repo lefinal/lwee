@@ -30,7 +30,7 @@ type Action interface {
 	InputIngestionRequests() []InputIngestionRequest
 	OutputOffers() []OutputOffer
 	IngestInput(ctx context.Context, inputName string, data io.ReadCloser) error
-	ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceProvider) error
+	ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceWriter) error
 	Start(ctx context.Context) (<-chan error, error)
 	Stop(ctx context.Context) error
 }
@@ -104,7 +104,7 @@ func (base *Base) OutputOffers() []OutputOffer {
 	return offers
 }
 
-func (base *Base) ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceProvider) error {
+func (base *Base) ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceWriter) error {
 	outputOffer, ok := base.outputOffersByOutputName[outputName]
 	if !ok {
 		return meh.NewInternalErr(fmt.Sprintf("unknown output name: %s", outputName), nil)

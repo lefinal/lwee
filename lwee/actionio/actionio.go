@@ -23,7 +23,7 @@ type sourceReader struct {
 	writer io.WriteCloser
 }
 
-type SourceProvider struct {
+type SourceWriter struct {
 	Name   string
 	Open   chan<- struct{}
 	Writer io.WriteCloser
@@ -36,7 +36,7 @@ type sourceWriter struct {
 
 type Supplier interface {
 	RequestSource(sourceName string) SourceReader
-	RegisterSourceProvider(sourceName string) (SourceProvider, error)
+	RegisterSourceProvider(sourceName string) (SourceWriter, error)
 	Validate() error
 	Forward(ctx context.Context) error
 }
@@ -189,7 +189,7 @@ func (supplier *supplier) RequestSource(sourceName string) SourceReader {
 	return readerToReturn
 }
 
-func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceProvider, error) {
+func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceWriter, error) {
 	supplier.logger.Debug(fmt.Sprintf("provide source output %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
@@ -199,7 +199,7 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceProvi
 		open:   open,
 		reader: reader,
 	}
-	writerToReturn := SourceProvider{
+	writerToReturn := SourceWriter{
 		Name:   sourceName,
 		Open:   open,
 		Writer: writer,
@@ -211,7 +211,7 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceProvi
 		}
 		// Forwarder for same source found.
 		if forwarder.writer.reader != nil {
-			return SourceProvider{}, meh.NewInternalErr(fmt.Sprintf("duplicate output for source %q", sourceName), nil)
+			return SourceWriter{}, meh.NewInternalErr(fmt.Sprintf("duplicate output for source %q", sourceName), nil)
 		}
 		forwarder.writer = writerToKeepInternally
 		return writerToReturn, nil

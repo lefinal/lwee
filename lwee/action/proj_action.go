@@ -9,8 +9,10 @@ import (
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/lwee/lwee/lweeprojactionfile"
+	"github.com/lefinal/lwee/lwee/lweestream"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"os"
 	"path"
@@ -69,6 +71,7 @@ func (factory *Factory) newProjectAction(base *Base, projectActionDetails lweefl
 			containerWorkspaceDir: path.Join(factory.Locator.ActionTempDirByAction(base.actionName), "container-workspace"),
 			containerState:        containerStateReady,
 			containerRunningCond:  sync.NewCond(&sync.Mutex{}),
+			streamConnector:       lweestream.NewConnector(base.logger.Named("stream-connector")),
 		}
 		err := os.MkdirAll(projectActionImage.containerWorkspaceDir, 0750)
 		if err != nil {
@@ -96,6 +99,7 @@ type projectActionImage struct {
 	containerState containerState
 	// containerRunningCond locks containerState.
 	containerRunningCond *sync.Cond
+	streamConnector      lweestream.Connector
 }
 
 func (action *projectActionImage) Build(ctx context.Context) error {
@@ -132,7 +136,12 @@ func (action *projectActionImage) registerInputIngestionRequests() error {
 			}
 			stdinInputRegistered = true
 			inputRequest = action.newStdinInputRequest(input)
-			// TODO: Add wait-flag if input/output has SDK
+		case lweeflowfile.ActionInputStream:
+			var err error
+			inputRequest, err = action.newStreamInputRequest(input)
+			if err != nil {
+				return meh.Wrap(err, "new stream input request", meh.Details{"input_name": inputName})
+			}
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action input %q has unsupported type: %s", inputName, input.Type()), nil)
 		}
@@ -156,13 +165,17 @@ func (action *projectActionImage) registerOutputProviders() error {
 			}
 			stdoutOutputRegistered = true
 			outputOffer = action.newStdoutOutputOffer()
+		case lweeflowfile.ActionOutputStream:
+			var err error
+			outputOffer, err = action.newStreamOutputOffer(output)
+			if err != nil {
+				return meh.Wrap(err, "new stream output offer", meh.Details{"output_name": outputName})
+			}
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action output %s has unsupported type: %s", outputName, output.Type()), nil)
 		}
 		outputOffer.offer.OutputName = outputName
 		action.outputOffersByOutputName[outputName] = outputOffer
-
-		// TODO: output stuff. and what to do with outputs that are not needed? who notifies? and we need to distinguish between outputs while running and outputs after having stopped.
 	}
 	return nil
 }
@@ -205,7 +218,7 @@ func (action *projectActionImage) newStdinInputRequest(input lweeflowfile.Action
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
 			// Wait for container running.
-			err := action.waitForPhase(ctx, containerStateRunning)
+			err := action.waitForContainerState(ctx, containerStateRunning)
 			if err != nil {
 				return meh.Wrap(err, "wait for container running", nil)
 			}
@@ -233,7 +246,32 @@ func (action *projectActionImage) newStdinInputRequest(input lweeflowfile.Action
 	}
 }
 
-func (action *projectActionImage) waitForPhase(ctx context.Context, state containerState) error {
+func (action *projectActionImage) newStreamInputRequest(input lweeflowfile.ActionInputStream) (inputIngestionRequestWithIngestor, error) {
+	err := action.streamConnector.RegisterStreamInputOffer(input.StreamName)
+	if err != nil {
+		return inputIngestionRequestWithIngestor{}, meh.Wrap(err, "register stream input offer at connector",
+			meh.Details{"stream_name": input.StreamName})
+	}
+	return inputIngestionRequestWithIngestor{
+		request: InputIngestionRequest{
+			IngestionPhase: PhaseRunning,
+			SourceName:     input.Source,
+		},
+		ingest: func(ctx context.Context, source io.Reader) error {
+			err := action.waitForContainerState(ctx, containerStateRunning)
+			if err != nil {
+				return meh.Wrap(err, "wait for container running", nil)
+			}
+			err = action.streamConnector.WriteInputStream(ctx, input.StreamName, source)
+			if err != nil {
+				return meh.Wrap(err, "write input stream with connector", meh.Details{"stream_name": input.StreamName})
+			}
+			return nil
+		},
+	}, nil
+}
+
+func (action *projectActionImage) waitForContainerState(ctx context.Context, state containerState) error {
 	action.containerRunningCond.L.Lock()
 	for {
 		if action.containerState >= state {
@@ -258,7 +296,7 @@ func (action *projectActionImage) newContainerWorkspaceFileOutputOffer(output lw
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for container stopped.
-			err := action.waitForPhase(ctx, containerStateDone)
+			err := action.waitForContainerState(ctx, containerStateDone)
 			if err != nil {
 				return meh.Wrap(err, "wait for container done", nil)
 			}
@@ -295,7 +333,7 @@ func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputte
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for container running.
-			err := action.waitForPhase(ctx, containerStateRunning)
+			err := action.waitForContainerState(ctx, containerStateRunning)
 			if err != nil {
 				return meh.Wrap(err, "wait for container running", nil)
 			}
@@ -323,6 +361,26 @@ func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputte
 	}
 }
 
+func (action *projectActionImage) newStreamOutputOffer(output lweeflowfile.ActionOutputStream) (OutputOfferWithOutputter, error) {
+	err := action.streamConnector.RegisterStreamOutputRequest(output.StreamName)
+	if err != nil {
+		return OutputOfferWithOutputter{}, meh.Wrap(err, "register stream output request at connector", meh.Details{"stream_name": output.StreamName})
+	}
+	return OutputOfferWithOutputter{
+		offer: OutputOffer{
+			OutputPhase: PhaseRunning,
+		},
+		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+			defer func() { _ = writer.Close() }()
+			err := action.streamConnector.ReadOutputStream(ctx, output.StreamName, ready, writer)
+			if err != nil {
+				return meh.Wrap(err, "read output stream with connector", meh.Details{"stream_name": output.StreamName})
+			}
+			return nil
+		},
+	}, nil
+}
+
 func (action *projectActionImage) setContainerState(newState containerState) {
 	action.containerRunningCond.L.Lock()
 	action.containerState = newState
@@ -332,6 +390,7 @@ func (action *projectActionImage) setContainerState(newState containerState) {
 
 func (action *projectActionImage) Start(ctx context.Context) (<-chan error, error) {
 	var err error
+	// Create and start the container.
 	containerConfig := container.Config{
 		ExposedPorts: nil,
 		VolumeMounts: []container.VolumeMount{
@@ -354,19 +413,45 @@ func (action *projectActionImage) Start(ctx context.Context) (<-chan error, erro
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "start container", meh.Details{"container_id": action.containerID})
 	}
+	containerIP, err := action.containerEngine.ContainerIP(ctx, action.containerID)
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "get container ip", meh.Details{"container_id": action.containerID})
+	}
+	// Wait until streams ready.
+	err = action.streamConnector.ConnectAndVerify(ctx, containerIP, lweestream.DefaultTargetPort)
+	if err != nil {
+		return nil, meh.Wrap(err, "connect stream connector and verify", meh.Details{
+			"target_host": containerIP,
+			"target_port": lweestream.DefaultTargetPort,
+		})
+	}
 	action.setContainerState(containerStateRunning)
 	stopped := make(chan error)
-	go func() {
+	eg, _ := errgroup.WithContext(ctx)
+	// Wait until the container has stopped.
+	eg.Go(func() error {
 		defer func() { _ = action.containerEngine.RemoveContainer(ctx, action.containerID) }()
 		err := action.containerEngine.WaitForContainerStopped(ctx, action.containerID)
 		action.setContainerState(containerStateDone)
 		if err != nil {
-			stopped <- meh.NewInternalErrFromErr(err, "wait for container stopped", meh.Details{"container_id": action.containerID})
-			return
+			return meh.NewInternalErrFromErr(err, "wait for container stopped", meh.Details{"container_id": action.containerID})
 		}
-		stopped <- nil
+		return nil
+	})
+	eg.Go(func() error {
+		err := action.streamConnector.PipeIO(ctx)
+		if err != nil {
+			return meh.Wrap(err, "pipe io with stream connector", nil)
+		}
+		return nil
+	})
+
+	go func() {
+		select {
+		case <-ctx.Done():
+		case stopped <- eg.Wait():
+		}
 	}()
-	// TODO: wait for sdk if flag is set
 	return stopped, nil
 }
 

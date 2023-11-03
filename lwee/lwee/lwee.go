@@ -178,5 +178,3 @@ func getFreePort() (int, error) {
 	defer func() { _ = listener.Close() }()
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
-
-// TODO: flow outputs and action outputs
