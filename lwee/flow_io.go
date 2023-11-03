@@ -82,7 +82,8 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 	}
 	source := lwee.ioSupplier.RequestSource(sourceName)
 	return func(ctx context.Context) error {
-		logger := lwee.logger.Named("flow-output").Named(logging.WrapName(outputName))
+		logger := lwee.logger.Named("flow-output").Named(logging.WrapName(outputName)).
+			With(zap.String("source_name", sourceName))
 		// Wait for source opened.
 		logger.Debug("wait for source opened")
 		select {
