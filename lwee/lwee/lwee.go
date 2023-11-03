@@ -49,7 +49,7 @@ func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locato
 		Locator:         locator,
 		actions:         make([]action.Action, 0),
 		flowFile:        flowFile,
-		ioSupplier:      actionio.NewSupplier(logger.Named("io")),
+		ioSupplier:      actionio.NewSupplier(logger.Named("io"), actionio.CopyOptions{}),
 	}
 	lwee.actionFactory = &action.Factory{
 		FlowName:        lwee.flowFile.Name,

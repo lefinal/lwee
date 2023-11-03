@@ -84,7 +84,8 @@ func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Actio
 			inputIngestionRequest.SourceName, inputIngestionRequest.InputName, actionToSchedule.Name()))
 		input := &input{
 			request: inputIngestionRequest,
-			source:  ioSupplier.RequestSource(inputIngestionRequest.SourceName),
+			source: ioSupplier.RequestSource(inputIngestionRequest.SourceName,
+				fmt.Sprintf("action.%s.in.%s", logging.WrapName(actionToSchedule.Name()), logging.WrapName(inputIngestionRequest.InputName))),
 		}
 		scheduledAction.inputs = append(scheduledAction.inputs, input)
 	}
@@ -142,6 +143,9 @@ func (scheduler *Scheduler) isCanceled() bool {
 func (scheduler *Scheduler) schedule() {
 	scheduler.m.Lock()
 	defer scheduler.m.Unlock()
+	if scheduler.isCanceled() {
+		return
+	}
 	for _, scheduledAction := range scheduler.scheduledActions {
 		reschedule := true
 		var err error
@@ -256,6 +260,9 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 				case <-ctx.Done():
 					return meh.NewInternalErrFromErr(ctx.Err(), "wait for action to stop", nil)
 				case err = <-done:
+				}
+				if err != nil {
+					return meh.Wrap(err, fmt.Sprintf("action %q failed", scheduledAction.action.Name()), nil)
 				}
 				return nil
 			})

@@ -79,7 +79,7 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 	if sourceHandler == nil {
 		return nil, meh.NewInternalErr("no source handler set", meh.Details{"flow_output_type": fmt.Sprintf("%T", flowOutput)})
 	}
-	source := lwee.ioSupplier.RequestSource(sourceName)
+	source := lwee.ioSupplier.RequestSource(sourceName, fmt.Sprintf("flow.out.%s", outputName))
 	return func(ctx context.Context) error {
 		logger := lwee.logger.Named("flow-output").Named(logging.WrapName(outputName)).
 			With(zap.String("source_name", sourceName))

@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+// DefaultReaderSourceBufferSize is the default source buffer size for Supplier.
+const DefaultReaderSourceBufferSize = 10000000 // 10MB
+
 type SourceReader struct {
 	Name   string
 	Open   <-chan struct{}
@@ -19,8 +22,9 @@ type SourceReader struct {
 }
 
 type sourceReader struct {
-	open   chan<- struct{}
-	writer io.WriteCloser
+	requester string
+	open      chan<- struct{}
+	writer    io.WriteCloser
 }
 
 type SourceWriter struct {
@@ -35,7 +39,7 @@ type sourceWriter struct {
 }
 
 type Supplier interface {
-	RequestSource(sourceName string) SourceReader
+	RequestSource(sourceName string, requester string) SourceReader
 	RegisterSourceProvider(sourceName string) (SourceWriter, error)
 	Validate() error
 	Forward(ctx context.Context) error
@@ -48,10 +52,11 @@ type Ingestor func(ctx context.Context, source io.Reader) error
 type Outputter func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error
 
 type sourceForwarder struct {
-	logger     *zap.Logger
-	sourceName string
-	writer     sourceWriter
-	readers    []sourceReader
+	logger      *zap.Logger
+	copyOptions CopyOptions
+	sourceName  string
+	writer      sourceWriter
+	readers     []sourceReader
 }
 
 func (forwarder *sourceForwarder) forward(ctx context.Context) error {
@@ -61,7 +66,7 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 			_ = reader.writer.Close()
 		}
 	}()
-	// Wait for writer ready.
+	// Wait for the writer being ready.
 	start := time.Now()
 	forwarder.logger.Debug("wait for source writer ready")
 	select {
@@ -73,13 +78,12 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		zap.Time("source_writer_ready_at", time.Now()),
 		zap.Duration("source_writer_ready_after", time.Since(start)))
 	// Forward to all source readers.
-	sourceReaders := make([]io.Writer, 0)
-	for _, reader := range forwarder.readers {
-		sourceReaders = append(sourceReaders, reader.writer)
-	}
-	var allSourceReaders io.Writer
-	if len(sourceReaders) > 0 {
-		allSourceReaders = io.MultiWriter(sourceReaders...)
+	sourceReadersAsWriters := make([]io.Writer, 0)
+	if len(forwarder.readers) > 0 {
+		// Map to io.Writer for usage with io.MultiWriter.
+		for _, r := range forwarder.readers {
+			sourceReadersAsWriters = append(sourceReadersAsWriters, r.writer)
+		}
 		forwarder.logger.Debug("notify all readers of source being open")
 		start = time.Now()
 		err := notifyReadersOfOpenSource(ctx, forwarder.readers)
@@ -89,16 +93,16 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		forwarder.logger.Debug("all readers notified", zap.Duration("took", time.Since(start)))
 	} else {
 		// No readers registered. Discard.
-		allSourceReaders = io.Discard
+		sourceReadersAsWriters = append(sourceReadersAsWriters, io.Discard)
 		forwarder.logger.Debug("discard source output due to no readers registered")
 	}
 	copyDone := make(chan error)
 	start = time.Now()
-	var bytesCopied int64
+	var stats ioCopyStats
 	go func() {
 		forwarder.logger.Debug("copy data", zap.Int("source_readers", len(forwarder.readers)))
 		var err error
-		bytesCopied, err = io.Copy(allSourceReaders, forwarder.writer.reader)
+		stats, err = ioCopyToMultiWithStats(forwarder.writer.reader, forwarder.copyOptions, sourceReadersAsWriters...)
 		if err != nil {
 			err = meh.Wrap(err, "copy", nil)
 		}
@@ -115,9 +119,24 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 			return err
 		}
 	}
+	writeTimesWithRequester := make(map[string]string)
+	for i, writeTime := range stats.writeTimes {
+		writeTimesWithRequester[forwarder.readers[i].requester] = writeTime.String()
+	}
 	forwarder.logger.Debug("source data copied",
 		zap.Duration("took", time.Since(start)),
-		zap.String("bytes_copied", logging.FormatByteCountDecimal(bytesCopied)),
+		zap.String("bytes_copied", logging.FormatByteCountDecimal(int64(stats.written))),
+		zap.String("copy_buffer_size", logging.FormatByteCountDecimal(int64(stats.copyOptions.CopyBufferSize))),
+		zap.Int("iop_count", stats.iopCount),
+		zap.Duration("read_time", stats.readTime),
+		zap.Duration("write_time_all", stats.writeTimeAll),
+		zap.Duration("min_write_time", stats.minWriteTime),
+		zap.Duration("max_write_time", stats.maxWriteTime),
+		zap.Duration("avg_write_time", stats.avgWriteTime),
+		zap.Duration("total_wait_for_next_p", stats.totalWaitForNextP),
+		zap.Duration("total_distribute_p", stats.totalDistributeP),
+		zap.Duration("total_wait_for_writes_after_distribute", stats.totalWaitForWritesAfterDistribute),
+		zap.Any("write_times", writeTimesWithRequester),
 		zap.Int("source_readers", len(forwarder.readers)))
 	return nil
 }
@@ -138,37 +157,41 @@ func notifyReadersOfOpenSource(ctx context.Context, readers []sourceReader) erro
 	return eg.Wait()
 }
 
-func NewSupplier(logger *zap.Logger) Supplier {
+func NewSupplier(logger *zap.Logger, copyOptions CopyOptions) Supplier {
 	return &supplier{
-		logger: logger,
+		logger:      logger,
+		copyOptions: copyOptions,
 	}
 }
 
 // supplier is the implementation of Supplier.
 type supplier struct {
-	logger     *zap.Logger
-	forwarders []*sourceForwarder
-	m          sync.Mutex
+	logger      *zap.Logger
+	copyOptions CopyOptions
+	forwarders  []*sourceForwarder
+	m           sync.Mutex
 }
 
 func (supplier *supplier) newForwarder(sourceName string) *sourceForwarder {
 	return &sourceForwarder{
-		logger:     supplier.logger.Named("source").Named(logging.WrapName(sourceName)),
-		sourceName: sourceName,
-		writer:     sourceWriter{},
-		readers:    make([]sourceReader, 0),
+		logger:      supplier.logger.Named("source").Named(logging.WrapName(sourceName)),
+		copyOptions: supplier.copyOptions,
+		sourceName:  sourceName,
+		writer:      sourceWriter{},
+		readers:     make([]sourceReader, 0),
 	}
 }
 
-func (supplier *supplier) RequestSource(sourceName string) SourceReader {
+func (supplier *supplier) RequestSource(sourceName string, requester string) SourceReader {
 	supplier.logger.Debug(fmt.Sprintf("request source %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
 	open := make(chan struct{})
 	reader, writer := io.Pipe()
 	readerToKeepInternally := sourceReader{
-		open:   open,
-		writer: writer,
+		requester: requester,
+		open:      open,
+		writer:    writer,
 	}
 	readerToReturn := SourceReader{
 		Name:   sourceName,
@@ -204,12 +227,12 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceWrite
 		Open:   open,
 		Writer: writer,
 	}
-	// Check if forwarder for same source already exists.
+	// Check if forwarder for the same source already exists.
 	for _, forwarder := range supplier.forwarders {
 		if forwarder.sourceName != sourceName {
 			continue
 		}
-		// Forwarder for same source found.
+		// Forwarder for the same source found.
 		if forwarder.writer.reader != nil {
 			return SourceWriter{}, meh.NewInternalErr(fmt.Sprintf("duplicate output for source %q", sourceName), nil)
 		}

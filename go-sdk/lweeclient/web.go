@@ -240,9 +240,3 @@ func (s *server) handleShutdown() handlerFunc {
 		return nil
 	}
 }
-
-// TODO: CONTINUE HEREEEEEEEE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-// TODO: Add documentation for sdk
-
-// TODO: We need buffering or figuring out why each step with direct IO (no file) adds almost 2 seconds in execution time.
