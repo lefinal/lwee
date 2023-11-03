@@ -30,7 +30,7 @@ type scheduledAction struct {
 func (scheduledAction *scheduledAction) inputIngestionsNotDoneForPhase(phase action.Phase) []*input {
 	notDone := make([]*input, 0)
 	for _, input := range scheduledAction.inputs {
-		if !input.done && input.request.IngestionPhase <= phase {
+		if !input.done && input.request.RequireFinishUntilPhase <= phase {
 			notDone = append(notDone, input)
 		}
 	}
@@ -42,7 +42,7 @@ func (scheduledAction *scheduledAction) inputIngestionsNotDoneForPhase(phase act
 func (scheduledAction *scheduledAction) outputProvidersNotDoneForPhase(phase action.Phase) []*output {
 	notDone := make([]*output, 0)
 	for _, output := range scheduledAction.outputs {
-		if !output.done && output.offer.OutputPhase <= phase {
+		if !output.done && output.offer.RequireFinishUntilPhase <= phase {
 			notDone = append(notDone, output)
 		}
 	}
@@ -52,6 +52,7 @@ func (scheduledAction *scheduledAction) outputProvidersNotDoneForPhase(phase act
 type input struct {
 	request action.InputIngestionRequest
 	ready   bool
+	started bool
 	done    bool
 	source  actionio.SourceReader
 }
@@ -99,7 +100,7 @@ func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Actio
 			return nil, meh.Wrap(err, "register source provider", meh.Details{
 				"source_name":  sourceName,
 				"output_name":  outputOffer.OutputName,
-				"output_phase": outputOffer.OutputPhase,
+				"output_phase": outputOffer.RequireFinishUntilPhase,
 			})
 		}
 		output := &output{
@@ -162,20 +163,35 @@ func (scheduler *Scheduler) schedule() {
 }
 
 func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *scheduledAction) (bool, error) {
+	// Assure all input ingestions are done that require finishing within this phase.
+	inputIngestionsNotDoneForPhase := scheduledAction.inputIngestionsNotDoneForPhase(scheduledAction.currentPhase)
+	if len(inputIngestionsNotDoneForPhase) > 0 {
+		waitingForSources := make([]string, 0)
+		for _, input := range inputIngestionsNotDoneForPhase {
+			waitingForSources = append(waitingForSources, input.request.SourceName)
+		}
+		logger.Debug("waiting for action input ingestions to finish in current phase",
+			zap.Any("current_phase", scheduledAction.currentPhase),
+			zap.Strings("waiting_for_sources", waitingForSources))
+		return false, nil
+	}
+	// No input ingestions remaining to wait for. Check if all output providers are
+	// done that require finishing within this phase.
+	outputProvidersNotDoneForPhase := scheduledAction.outputProvidersNotDoneForPhase(scheduledAction.currentPhase)
+	if len(outputProvidersNotDoneForPhase) > 0 {
+		waitingForOutputs := make([]string, 0)
+		for _, output := range outputProvidersNotDoneForPhase {
+			waitingForOutputs = append(waitingForOutputs, output.offer.OutputName)
+		}
+		logger.Debug("waiting for action output to finish in current phase",
+			zap.Any("current_phase", scheduledAction.currentPhase),
+			zap.Strings("waiting_for_outputs", waitingForOutputs))
+		return false, nil
+	}
+	// No input ingestions or output providers remaining.
 	switch scheduledAction.currentPhase {
 	case action.PhasePreStart:
-		// Check if all pre-start input ingestion requests are done.
-		inputIngestionsNotDoneForPhase := scheduledAction.inputIngestionsNotDoneForPhase(action.PhasePreStart)
-		if len(inputIngestionsNotDoneForPhase) > 0 {
-			waitingForSources := make([]string, 0)
-			for _, input := range inputIngestionsNotDoneForPhase {
-				waitingForSources = append(waitingForSources, input.request.SourceName)
-			}
-			logger.Debug("waiting for action input ingestions in pre-start phase to finish",
-				zap.Strings("waiting_for_sources", waitingForSources))
-			return false, nil
-		}
-		logger.Debug("no action input ingestions to wait for. now waiting for live input.")
+		logger.Debug("now waiting for live input.")
 		scheduledAction.currentPhase = action.PhaseWaitForLiveInput
 		return true, nil
 	case action.PhaseWaitForLiveInput:
@@ -184,7 +200,7 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 		liveInputsBeingReady := 0
 		liveInputsNotBeingReady := 0
 		for _, actionInput := range scheduledAction.inputs {
-			if actionInput.request.IngestionPhase < action.PhaseRunning {
+			if actionInput.request.RequireFinishUntilPhase < action.PhaseRunning {
 				continue
 			}
 			if actionInput.ready {
@@ -278,17 +294,6 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 		action.PhaseRunning:
 		return false, nil
 	case action.PhaseStopped:
-		// Check if all post-running output providers are done.
-		outputProvidersNotDoneForPhase := scheduledAction.outputProvidersNotDoneForPhase(action.PhaseStopped)
-		if len(outputProvidersNotDoneForPhase) > 0 {
-			waitingForOutputs := make([]string, 0)
-			for _, output := range outputProvidersNotDoneForPhase {
-				waitingForOutputs = append(waitingForOutputs, output.offer.OutputName)
-			}
-			logger.Debug("waiting for action output in stopped phase to finish",
-				zap.Strings("waiting_for_outputs", waitingForOutputs))
-			return false, nil
-		}
 		scheduledAction.currentPhase = action.PhaseDone
 		return false, nil
 	case action.PhaseDone:

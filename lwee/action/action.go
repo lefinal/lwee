@@ -42,9 +42,9 @@ type action interface {
 }
 
 type InputIngestionRequest struct {
-	IngestionPhase Phase
-	InputName      string
-	SourceName     string
+	RequireFinishUntilPhase Phase
+	InputName               string
+	SourceName              string
 }
 
 type inputIngestionRequestWithIngestor struct {
@@ -53,8 +53,8 @@ type inputIngestionRequestWithIngestor struct {
 }
 
 type OutputOffer struct {
-	OutputPhase Phase
-	OutputName  string
+	RequireFinishUntilPhase Phase
+	OutputName              string
 }
 
 type OutputOfferWithOutputter struct {

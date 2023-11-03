@@ -183,8 +183,8 @@ func (action *projectActionImage) registerOutputProviders() error {
 func (action *projectActionImage) newContainerWorkspaceFileInputRequest(input lweeflowfile.ActionInputContainerWorkspaceFile) inputIngestionRequestWithIngestor {
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
-			IngestionPhase: PhasePreStart,
-			SourceName:     input.Source,
+			RequireFinishUntilPhase: PhasePreStart,
+			SourceName:              input.Source,
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
 			filename := path.Join(action.containerWorkspaceDir, input.Filename)
@@ -213,8 +213,8 @@ func (action *projectActionImage) newContainerWorkspaceFileInputRequest(input lw
 func (action *projectActionImage) newStdinInputRequest(input lweeflowfile.ActionInputStdin) inputIngestionRequestWithIngestor {
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
-			IngestionPhase: PhaseRunning,
-			SourceName:     input.Source,
+			RequireFinishUntilPhase: PhaseRunning,
+			SourceName:              input.Source,
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
 			// Wait for container running.
@@ -254,8 +254,8 @@ func (action *projectActionImage) newStreamInputRequest(input lweeflowfile.Actio
 	}
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
-			IngestionPhase: PhaseRunning,
-			SourceName:     input.Source,
+			RequireFinishUntilPhase: PhaseRunning,
+			SourceName:              input.Source,
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
 			err := action.waitForContainerState(ctx, containerStateRunning)
@@ -291,7 +291,7 @@ func (action *projectActionImage) waitForContainerState(ctx context.Context, sta
 func (action *projectActionImage) newContainerWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputContainerWorkspaceFile) OutputOfferWithOutputter {
 	return OutputOfferWithOutputter{
 		offer: OutputOffer{
-			OutputPhase: PhaseStopped,
+			RequireFinishUntilPhase: PhaseStopped,
 		},
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
@@ -328,7 +328,7 @@ func (action *projectActionImage) newContainerWorkspaceFileOutputOffer(output lw
 func (action *projectActionImage) newStdoutOutputOffer() OutputOfferWithOutputter {
 	return OutputOfferWithOutputter{
 		offer: OutputOffer{
-			OutputPhase: PhaseRunning,
+			RequireFinishUntilPhase: PhaseRunning,
 		},
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
@@ -368,7 +368,7 @@ func (action *projectActionImage) newStreamOutputOffer(output lweeflowfile.Actio
 	}
 	return OutputOfferWithOutputter{
 		offer: OutputOffer{
-			OutputPhase: PhaseRunning,
+			RequireFinishUntilPhase: PhaseRunning,
 		},
 		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
