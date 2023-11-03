@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -151,14 +152,22 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 // buildActions builds all actions.
 func (lwee *LWEE) buildActions(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	for actionName, actionToBuild := range lwee.actions {
-		actionName := actionName
+	actionsBuilt := 0
+	var actionsBuiltMutex sync.Mutex
+	for _, actionToBuild := range lwee.actions {
 		actionToBuild := actionToBuild
 		eg.Go(func() error {
+			start := time.Now()
 			err := actionToBuild.Build(ctx)
 			if err != nil {
-				return meh.Wrap(err, fmt.Sprintf("build action %q", actionName), nil)
+				return meh.Wrap(err, fmt.Sprintf("build action %q", actionToBuild.Name()), nil)
 			}
+			actionsBuiltMutex.Lock()
+			actionsBuilt++
+			lwee.logger.Debug(fmt.Sprintf("finished action build %d/%d", actionsBuilt, len(lwee.actions)),
+				zap.String("action_name", actionToBuild.Name()),
+				zap.Duration("took", time.Since(start)))
+			actionsBuiltMutex.Unlock()
 			return nil
 		})
 	}
