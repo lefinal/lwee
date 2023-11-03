@@ -16,6 +16,7 @@ const (
 )
 
 type Engine interface {
+	ImagePull(ctx context.Context, imageTag string) error
 	ImageBuild(ctx context.Context, properties ImageBuildOptions) error
 	CreateContainer(ctx context.Context, containerConfig Config) (string, error)
 	StartContainer(ctx context.Context, containerID string) error

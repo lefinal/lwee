@@ -136,6 +136,11 @@ func (factory *Factory) NewAction(logger *zap.Logger, actionName string, fileAct
 		outputOffersByOutputName:          make(map[string]OutputOfferWithOutputter),
 	}
 	switch runner := fileAction.Runner.Runner.(type) {
+	case lweeflowfile.ActionRunnerImage:
+		builtAction, err = factory.newImageAction(base, runner)
+		if err != nil {
+			return nil, meh.Wrap(err, "new image action", nil)
+		}
 	case lweeflowfile.ActionRunnerProjectAction:
 		builtAction, err = factory.newProjectAction(base, runner)
 		if err != nil {

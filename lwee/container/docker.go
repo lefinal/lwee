@@ -175,6 +175,30 @@ type VolumeMount struct {
 	Target string
 }
 
+func (engine *dockerEngine) ImagePull(ctx context.Context, imageTag string) error {
+	logger := engine.logger.Named("image-pull").Named("log").With(zap.String("image_tag", imageTag))
+	logger.Debug("pull image")
+	r, err := engine.dockerClient.ImagePull(ctx, imageTag, dockertypes.ImagePullOptions{})
+	if err != nil {
+		return meh.NewBadInputErrFromErr(err, "pull image", meh.Details{"image_tag": imageTag})
+	}
+	defer func() { _ = r.Close() }()
+	// Read log entries and forward to engine logger.
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		m := make(map[string]any)
+		err = json.Unmarshal(scanner.Bytes(), &m)
+		if err != nil {
+			logger.Debug("cannot parse log entry from docker", zap.String("was", scanner.Text()))
+			continue
+		}
+		status := fmt.Sprint(m["status"])
+		delete(m, "status")
+		logger.Debug(status, zap.Any("log_details", m))
+	}
+	return nil
+}
+
 func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig Config) (string, error) {
 	// Build container config.
 	dockerContainerConfig := &dockercontainer.Config{

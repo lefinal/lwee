@@ -138,8 +138,8 @@ func (runner ActionRunnerCommand) Type() string {
 
 type ActionRunnerImage struct {
 	ActionRunnerBase
-	Image   string `json:"image"`
-	Command string `json:"command"`
+	Image   string   `json:"image"`
+	Command []string `json:"command"`
 }
 
 func (runner ActionRunnerImage) Type() string {
@@ -148,9 +148,9 @@ func (runner ActionRunnerImage) Type() string {
 
 type ActionRunnerProjectAction struct {
 	ActionRunnerBase
-	Name   string `json:"name"`
-	Config string `json:"config"`
-	Args   string `json:"args"`
+	Name    string   `json:"name"`
+	Config  string   `json:"config"`
+	Command []string `json:"command"`
 }
 
 func (runner ActionRunnerProjectAction) Type() string {
