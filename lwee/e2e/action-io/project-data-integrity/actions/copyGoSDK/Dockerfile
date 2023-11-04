@@ -8,7 +8,4 @@ FROM ubuntu:20.04
 
 COPY --from=builder /app/main /app/main
 
-# TODO: REMOVE
-ENV LWEE_DEBUG=true
-
 ENTRYPOINT ["/app/main"]
