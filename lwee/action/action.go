@@ -148,6 +148,11 @@ func (factory *Factory) NewAction(logger *zap.Logger, actionName string, fileAct
 	}
 	// Create the actual action.
 	switch runner := fileAction.Runner.Runner.(type) {
+	case lweeflowfile.ActionRunnerCommand:
+		builtAction, err = factory.newCommandAction(base, renderData, runner)
+		if err != nil {
+			return nil, meh.Wrap(err, "new command action", nil)
+		}
 	case lweeflowfile.ActionRunnerImage:
 		builtAction, err = factory.newImageAction(base, renderData, runner)
 		if err != nil {
