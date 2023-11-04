@@ -1,0 +1,64 @@
+# Set the flow name according to the task it accomplishes.
+name: "E2E Test - cycle detection"
+description: Flow has cyclic action dependencies.
+
+in:
+# No flow inputs.
+
+actions:
+  action1:
+    description: "Generates data."
+    run:
+      type: image
+      image: ubuntu:22.04
+      command:
+        - "echo"
+        - "Hello World!"
+    out:
+      helloWorld:
+        providedAs: stdout
+
+  action2:
+    description: "Requires data from action 1 as well as from action 3."
+    in:
+      helloWorldFromAction1:
+        source: action.action1.out.helloWorld
+        provideAs: workspace-file
+        filename: "from-action1.txt"
+      helloWorldFromAction3:
+        source: action.action3.out.helloWorld
+        provideAs: workspace-file
+        filename: "from-action3.txt"
+    run:
+      type: image
+      image: ubuntu:22.04
+      command:
+        - "/bin/sh"
+        - "-c"
+        - "echo 'Hello from action 2!' >> from-action2.txt"
+    out:
+      helloWorld:
+        providedAs: workspace-file
+        filename: "from-action2.txt"
+
+  action3:
+    description: "Requires data from action 1 as well as from action 2."
+    in:
+      helloWorldFromAction2:
+        source: action.action2.out.helloWorld
+        provideAs: workspace-file
+        filename: "from-action2.txt"
+    run:
+      type: image
+      image: ubuntu:22.04
+      command:
+        - "/bin/sh"
+        - "-c"
+        - "echo 'Hello from action 3!' >> from-action3.txt"
+    out:
+      helloWorld:
+        providedAs: workspace-file
+        filename: "from-action3.txt"
+
+out:
+# No flow outputs.

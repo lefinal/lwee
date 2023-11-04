@@ -22,9 +22,12 @@ type SourceReader struct {
 }
 
 type sourceReader struct {
-	requester string
-	open      chan<- struct{}
-	writer    io.WriteCloser
+	entityName string
+	// requesterName holds a string representation of the requesterName's identifier.
+	// This is used for logging as well as cycle detection.
+	requesterName string
+	open          chan<- struct{}
+	writer        io.WriteCloser
 }
 
 type SourceWriter struct {
@@ -34,13 +37,17 @@ type SourceWriter struct {
 }
 
 type sourceWriter struct {
-	open   <-chan struct{}
-	reader io.ReadCloser
+	entityName string
+	// providerName holds a string representation of the providerName's identifier.
+	// This is used for logging as well as cycle detection.
+	providerName string
+	open         <-chan struct{}
+	reader       io.ReadCloser
 }
 
 type Supplier interface {
-	RequestSource(sourceName string, requester string) SourceReader
-	RegisterSourceProvider(sourceName string) (SourceWriter, error)
+	RequestSource(sourceName string, entityName string, requesterName string) SourceReader
+	RegisterSourceProvider(sourceName string, entityName string, providerName string) (SourceWriter, error)
 	Validate() error
 	Forward(ctx context.Context) error
 }
@@ -120,8 +127,12 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		}
 	}
 	writeTimesWithRequester := make(map[string]string)
-	for i, writeTime := range stats.writeTimes {
-		writeTimesWithRequester[forwarder.readers[i].requester] = writeTime.String()
+	// We go by registered readers in order to avoid errors when no readers are
+	// registered, but I/O discard is being passed to writing.
+	if len(forwarder.readers) > 0 {
+		for i := range stats.writeTimes {
+			writeTimesWithRequester[forwarder.readers[i].requesterName] = stats.writeTimes[i].String()
+		}
 	}
 	forwarder.logger.Debug("source data copied",
 		zap.Duration("took", time.Since(start)),
@@ -139,6 +150,14 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		zap.Any("write_times", writeTimesWithRequester),
 		zap.Int("source_readers", len(forwarder.readers)))
 	return nil
+}
+
+func (forwarder *sourceForwarder) requesterNames() []string {
+	requestedByReaders := make([]string, 0)
+	for _, reader := range forwarder.readers {
+		requestedByReaders = append(requestedByReaders, reader.requesterName)
+	}
+	return requestedByReaders
 }
 
 func notifyReadersOfOpenSource(ctx context.Context, readers []sourceReader) error {
@@ -182,16 +201,17 @@ func (supplier *supplier) newForwarder(sourceName string) *sourceForwarder {
 	}
 }
 
-func (supplier *supplier) RequestSource(sourceName string, requester string) SourceReader {
+func (supplier *supplier) RequestSource(sourceName string, entityName string, requesterName string) SourceReader {
 	supplier.logger.Debug(fmt.Sprintf("request source %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
 	open := make(chan struct{})
 	reader, writer := io.Pipe()
 	readerToKeepInternally := sourceReader{
-		requester: requester,
-		open:      open,
-		writer:    writer,
+		entityName:    entityName,
+		requesterName: requesterName,
+		open:          open,
+		writer:        writer,
 	}
 	readerToReturn := SourceReader{
 		Name:   sourceName,
@@ -212,15 +232,17 @@ func (supplier *supplier) RequestSource(sourceName string, requester string) Sou
 	return readerToReturn
 }
 
-func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceWriter, error) {
+func (supplier *supplier) RegisterSourceProvider(sourceName string, entityName string, providerName string) (SourceWriter, error) {
 	supplier.logger.Debug(fmt.Sprintf("provide source output %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
 	open := make(chan struct{})
 	reader, writer := io.Pipe()
 	writerToKeepInternally := sourceWriter{
-		open:   open,
-		reader: reader,
+		entityName:   entityName,
+		providerName: providerName,
+		open:         open,
+		reader:       reader,
 	}
 	writerToReturn := SourceWriter{
 		Name:   sourceName,
@@ -234,7 +256,10 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string) (SourceWrite
 		}
 		// Forwarder for the same source found.
 		if forwarder.writer.reader != nil {
-			return SourceWriter{}, meh.NewInternalErr(fmt.Sprintf("duplicate output for source %q", sourceName), nil)
+			return SourceWriter{}, meh.NewInternalErr(fmt.Sprintf("duplicate output for source %q", sourceName), meh.Details{
+				"provided_by":      forwarder.writer.providerName,
+				"provided_also_by": providerName,
+			})
 		}
 		forwarder.writer = writerToKeepInternally
 		return writerToReturn, nil
@@ -250,13 +275,14 @@ func (supplier *supplier) Validate() error {
 	// Check for missing source providers (writers).
 	for _, forwarder := range supplier.forwarders {
 		if forwarder.writer.reader == nil {
-			requestedByReaders := make([]string, 0)
-			for _, reader := range forwarder.readers {
-				requestedByReaders = append(requestedByReaders, reader.requester)
-			}
 			return meh.NewInternalErr(fmt.Sprintf("missing source provider for source %q", forwarder.sourceName),
-				meh.Details{"requested_by_readers": requestedByReaders})
+				meh.Details{"requested_by_readers": forwarder.requesterNames()})
 		}
+	}
+	// Check for cycles.
+	err := assureNoCycles(supplier.forwarders)
+	if err != nil {
+		return meh.Wrap(err, "assure no cycles", nil)
 	}
 	return nil
 }
@@ -269,7 +295,10 @@ func (supplier *supplier) Forward(ctx context.Context) error {
 		eg.Go(func() error {
 			err := forwarder.forward(ctx)
 			if err != nil {
-				return meh.Wrap(err, fmt.Sprintf("forward source %q", forwarder.sourceName), nil)
+				return meh.Wrap(err, fmt.Sprintf("forward source %q", forwarder.sourceName), meh.Details{
+					"provider":   forwarder.writer.providerName,
+					"requesters": forwarder.requesterNames(),
+				})
 			}
 			return nil
 		})

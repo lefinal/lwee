@@ -4,12 +4,14 @@ go 1.21
 
 require (
 	github.com/docker/docker v24.0.5+incompatible
+	github.com/docker/go-connections v0.4.0
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/jackc/pgconn v1.12.0
 	github.com/lefinal/meh v1.11.0
 	github.com/lefinal/nulls v1.6.0
+	github.com/lefinal/zaprec v1.1.0
 	github.com/stretchr/testify v1.8.3
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.26.0
 	golang.org/x/sync v0.3.0
 	pgregory.net/rapid v1.1.0
 	sigs.k8s.io/yaml v1.3.0
@@ -22,7 +24,6 @@ require (
 	github.com/containerd/containerd v1.7.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
-	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
@@ -43,8 +44,7 @@ require (
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	go.uber.org/atomic v1.7.0 // indirect
-	go.uber.org/multierr v1.6.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.10.0 // indirect

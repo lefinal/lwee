@@ -73,6 +73,7 @@ type Scheduler struct {
 }
 
 func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Action, ioSupplier actionio.Supplier) (*scheduledAction, error) {
+	actionEntityNameForActionIO := fmt.Sprintf("action.%s", logging.WrapName(actionToSchedule.Name()))
 	scheduledAction := &scheduledAction{
 		action:       actionToSchedule,
 		inputs:       make([]*input, 0),
@@ -85,7 +86,7 @@ func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Actio
 			inputIngestionRequest.SourceName, inputIngestionRequest.InputName, actionToSchedule.Name()))
 		input := &input{
 			request: inputIngestionRequest,
-			source: ioSupplier.RequestSource(inputIngestionRequest.SourceName,
+			source: ioSupplier.RequestSource(inputIngestionRequest.SourceName, actionEntityNameForActionIO,
 				fmt.Sprintf("action.%s.in.%s", logging.WrapName(actionToSchedule.Name()), logging.WrapName(inputIngestionRequest.InputName))),
 		}
 		scheduledAction.inputs = append(scheduledAction.inputs, input)
@@ -95,7 +96,8 @@ func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Actio
 		logger.Debug(fmt.Sprintf("offer output %q of action %q",
 			outputOffer.OutputName, actionToSchedule.Name()))
 		sourceName := fmt.Sprintf("action.%s.out.%s", actionToSchedule.Name(), outputOffer.OutputName)
-		source, err := ioSupplier.RegisterSourceProvider(sourceName)
+		source, err := ioSupplier.RegisterSourceProvider(sourceName, actionEntityNameForActionIO,
+			fmt.Sprintf("action.%s.out.%s", logging.WrapName(actionToSchedule.Name()), logging.WrapName(outputOffer.OutputName)))
 		if err != nil {
 			return nil, meh.Wrap(err, "register source provider", meh.Details{
 				"source_name":  sourceName,

@@ -1,6 +1,6 @@
 lwee [arguments] [command] [context directory]
 
-Commands:
+command:
     create-action   Creates the specified action.
     init            Initializes a new project in the context directory.
     verify          Verifyies the project with the flow file in the context directory.
