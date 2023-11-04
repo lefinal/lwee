@@ -222,7 +222,9 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 		scheduledAction.currentPhase = action.PhaseStarting
 		go func() {
 			defer func() {
+				defer scheduler.schedule()
 				scheduler.m.Lock()
+				defer scheduler.m.Unlock()
 				scheduledAction.currentPhase = action.PhaseStopped
 				scheduler.remainingActions--
 				remainingActionNames := make([]string, 0)
@@ -231,12 +233,10 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 						remainingActionNames = append(remainingActionNames, scheduledAction.action.Name())
 					}
 				}
-				scheduler.m.Unlock()
 				scheduler.logger.Info(fmt.Sprintf("finished action %d/%d",
 					len(scheduler.scheduledActions)-scheduler.remainingActions, len(scheduler.scheduledActions)),
 					zap.String("action_name", scheduledAction.action.Name()),
 					zap.Duration("action_took", time.Since(scheduledAction.start)))
-				scheduler.schedule()
 			}()
 			scheduledAction.start = time.Now()
 			done, err := scheduledAction.action.Start(scheduler.ctx)
