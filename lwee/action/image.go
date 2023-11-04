@@ -206,7 +206,8 @@ func (action *imageRunner) waitForContainerState(ctx context.Context, state cont
 		}
 		select {
 		case <-ctx.Done():
-			return meh.NewBadInputErrFromErr(ctx.Err(), "context done while waiting for container running", nil)
+			return meh.NewBadInputErrFromErr(ctx.Err(), "context done while waiting for container state",
+				meh.Details{"wait_for_state": state})
 		default:
 		}
 		action.containerRunningCond.Wait()
