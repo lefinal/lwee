@@ -355,10 +355,11 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 	}
 	action.setContainerState(containerStateRunning)
 	stopped := make(chan error)
-	eg, _ := errgroup.WithContext(ctx)
+	startCtx := ctx
+	eg, ctx := errgroup.WithContext(ctx)
 	// Wait until the container has stopped.
 	eg.Go(func() error {
-		defer func() { _ = action.containerEngine.RemoveContainer(ctx, action.containerID) }()
+		defer func() { _ = action.containerEngine.RemoveContainer(context.Background(), action.containerID) }()
 		err := action.containerEngine.WaitForContainerStopped(ctx, action.containerID)
 		action.setContainerState(containerStateDone)
 		if err != nil {
@@ -376,7 +377,7 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 
 	go func() {
 		select {
-		case <-ctx.Done():
+		case <-startCtx.Done():
 		case stopped <- eg.Wait():
 		}
 	}()
