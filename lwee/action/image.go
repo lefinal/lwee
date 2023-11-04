@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/docker/go-connections/nat"
 	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/lwee/lwee/logging"
@@ -319,8 +320,15 @@ func (action *imageRunner) setContainerState(newState containerState) {
 func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 	var err error
 	// Create and start the container.
+	sdkPort, err := nat.NewPort("tcp", lweestream.DefaultTargetPort)
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "create default lwee stream target port",
+			meh.Details{"port": lweestream.DefaultTargetPort})
+	}
 	containerConfig := container.Config{
-		ExposedPorts: nil,
+		ExposedPorts: map[nat.Port]struct{}{
+			sdkPort: {},
+		},
 		VolumeMounts: []container.VolumeMount{
 			{
 				Source: action.workspaceHostDir,
@@ -341,17 +349,19 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "start container", meh.Details{"container_id": action.containerID})
 	}
-	containerIP, err := action.containerEngine.ContainerIP(ctx, action.containerID)
-	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "get container ip", meh.Details{"container_id": action.containerID})
-	}
-	// Wait until streams ready.
-	err = action.streamConnector.ConnectAndVerify(ctx, containerIP, lweestream.DefaultTargetPort)
-	if err != nil {
-		return nil, meh.Wrap(err, "connect stream connector and verify", meh.Details{
-			"target_host": containerIP,
-			"target_port": lweestream.DefaultTargetPort,
-		})
+	if action.streamConnector.HasRegisteredIO() {
+		containerIP, err := action.containerEngine.ContainerIP(ctx, action.containerID)
+		if err != nil {
+			return nil, meh.NewInternalErrFromErr(err, "get container ip", meh.Details{"container_id": action.containerID})
+		}
+		// Wait until streams ready.
+		err = action.streamConnector.ConnectAndVerify(ctx, containerIP, lweestream.DefaultTargetPort)
+		if err != nil {
+			return nil, meh.Wrap(err, "connect stream connector and verify", meh.Details{
+				"target_host": containerIP,
+				"target_port": lweestream.DefaultTargetPort,
+			})
+		}
 	}
 	action.setContainerState(containerStateRunning)
 	stopped := make(chan error)
