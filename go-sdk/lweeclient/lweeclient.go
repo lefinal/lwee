@@ -6,11 +6,16 @@ import (
 	"fmt"
 	"github.com/lefinal/lwee/go-sdk/waitforterminate"
 	"github.com/lefinal/meh"
+	"github.com/lefinal/meh/mehlog"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"io"
+	"os"
+	"strconv"
 	"sync"
 )
 
+const EnvDebug = "LWEE_DEBUG"
 const DefaultOutputBufferSize = 16 * 1024 * 1024 // 16MB
 
 type InputReader interface {
@@ -180,10 +185,47 @@ func New(options Options) Client {
 	if options.Logger != nil {
 		c.logger = options.Logger
 	}
+	if debug, err := strconv.ParseBool(os.Getenv(EnvDebug)); err == nil && debug {
+		c.logger, _ = NewLogger(zap.DebugLevel)
+		c.logger.Debug("running in debug mode")
+	}
 	if options.ListenAddr != "" {
 		c.listenAddr = options.ListenAddr
 	}
 	return c
+}
+
+// NewLogger creates a new zap.Logger. Don't forget to call Sync() on the
+// returned logged before exiting!
+func NewLogger(level zapcore.Level) (*zap.Logger, error) {
+	config := zap.NewProductionConfig()
+	config.Encoding = "console"
+	config.EncoderConfig = zapcore.EncoderConfig{
+		TimeKey:        "ts",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+		EncodeTime:     zapcore.RFC3339TimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+	config.OutputPaths = []string{"stdout"}
+	config.Level = zap.NewAtomicLevelAt(level)
+	config.DisableCaller = true
+	config.DisableStacktrace = true
+	logger, err := config.Build()
+	if err != nil {
+		return nil, meh.NewInternalErrFromErr(err, "new zap production logger", meh.Details{"config": config})
+	}
+	mehlog.SetDefaultLevelTranslator(func(_ meh.Code) zapcore.Level {
+		return zapcore.ErrorLevel
+	})
+	return logger, nil
 }
 
 func (c *client) Lifetime() context.Context {
@@ -191,6 +233,7 @@ func (c *client) Lifetime() context.Context {
 }
 
 func (c *client) RequestInputStream(streamName string) (InputReader, error) {
+	c.logger.Debug("request input stream", zap.String("stream_name", streamName))
 	c.m.Lock()
 	defer c.m.Unlock()
 	if c.serving {
@@ -205,6 +248,7 @@ func (c *client) RequestInputStream(streamName string) (InputReader, error) {
 }
 
 func (c *client) ProvideOutputStream(streamName string) (OutputWriter, error) {
+	c.logger.Debug("provide output stream", zap.String("stream_name", streamName))
 	c.m.Lock()
 	defer c.m.Unlock()
 	if c.serving {
@@ -231,6 +275,9 @@ func (c *client) Serve() error {
 	defer func() {
 		c.m.Lock()
 		c.serving = false
+		if c.logger != nil {
+			_ = c.logger.Sync()
+		}
 		c.m.Unlock()
 	}()
 	server := newServer(c.logger.Named("http"), listenAddr, c)

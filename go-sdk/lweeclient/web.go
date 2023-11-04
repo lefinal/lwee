@@ -136,6 +136,7 @@ func (s *server) serve(ctx context.Context) error {
 		<-ctx.Done()
 		_ = s.httpServer.Shutdown(context.Background())
 	}()
+	s.logger.Debug("serving http", zap.String("listen_addr", s.httpServer.Addr))
 	err := s.httpServer.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return meh.NewBadInputErrFromErr(err, "serve http", meh.Details{"addr": s.httpServer.Addr})

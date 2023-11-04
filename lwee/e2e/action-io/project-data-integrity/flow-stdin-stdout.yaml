@@ -1,0 +1,60 @@
+# Set the flow name according to the task it accomplishes.
+name: My Flow
+description: Add your description here.
+in:
+  myInput:
+    providedAs: file
+    filename: src/input
+actions:
+  copy1:
+    in:
+      in:
+        source: flow.in.myInput
+        provideAs: stdin
+    run:
+      type: proj-action
+      name: copyStdinStdout
+    out:
+      out:
+        providedAs: stdout
+
+  copy2:
+    in:
+      in:
+        source: action.copy1.out.out
+        provideAs: stdin
+    run:
+      type: proj-action
+      name: copyStdinStdout
+    out:
+      out:
+        providedAs: stdout
+
+  copy3:
+    in:
+      in:
+        source: action.copy2.out.out
+        provideAs: stdin
+    run:
+      type: proj-action
+      name: copyStdinStdout
+    out:
+      out:
+        providedAs: stdout
+
+  copy4:
+    in:
+      in:
+        source: action.copy3.out.out
+        provideAs: stdin
+    run:
+      type: proj-action
+      name: copyStdinStdout
+    out:
+      out:
+        providedAs: stdout
+out:
+  myOutput:
+    source: action.copy4.out.out
+    provideAs: file
+    filename: "out/output"

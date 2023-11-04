@@ -27,6 +27,7 @@ const defaultHTTPBufferSize = 1024 * 1024
 type Connector interface {
 	RegisterStreamInputOffer(streamName string) error
 	RegisterStreamOutputRequest(streamName string) error
+	HasRegisteredIO() bool
 	ConnectAndVerify(ctx context.Context, host string, port string) error
 	WriteInputStream(ctx context.Context, streamName string, r io.Reader) error
 	ReadOutputStream(ctx context.Context, streamName string, ready chan<- struct{}, writer io.Writer) error
@@ -94,6 +95,18 @@ func (c *connector) RegisterStreamOutputRequest(streamName string) error {
 	}
 	c.expectedOutputStreamsFromTarget[streamName] = false
 	return nil
+}
+
+func (c *connector) HasRegisteredIO() bool {
+	c.streamInputsOutputsCond.L.Lock()
+	defer c.streamInputsOutputsCond.L.Unlock()
+	if len(c.expectedOutputStreamsFromTarget) > 0 {
+		return true
+	}
+	if len(c.offeredInputStreamsToTarget) > 0 {
+		return true
+	}
+	return false
 }
 
 func (c *connector) ConnectAndVerify(ctx context.Context, host string, port string) error {
@@ -313,6 +326,9 @@ func (c *connector) ReadOutputStream(ctx context.Context, streamName string, rea
 }
 
 func (c *connector) PipeIO(ctx context.Context) error {
+	if !c.HasRegisteredIO() {
+		return nil
+	}
 	// Defer target shutdown with timeout.
 	defer func() {
 		const timeoutDur = 3 * time.Second

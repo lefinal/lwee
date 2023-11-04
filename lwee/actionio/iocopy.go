@@ -89,7 +89,7 @@ func ioCopyToMultiWithStats(src io.Reader, options CopyOptions, writers ...io.Wr
 
 	stats := ioCopyStats{
 		copyOptions:  options,
-		writeTimes:   make([]time.Duration, 0),
+		writeTimes:   make([]time.Duration, len(writers)),
 		minWriteTime: math.MaxInt,
 		maxWriteTime: -1,
 		avgWriteTime: -1,
@@ -223,8 +223,8 @@ func ioCopyToMultiWithStats(src io.Reader, options CopyOptions, writers ...io.Wr
 
 	err := eg.Wait()
 	// Finish up stats.
-	for _, writer := range copyWriters {
-		stats.writeTimes = append(stats.writeTimes, writer.writeTime)
+	for i, writer := range copyWriters {
+		stats.writeTimes[i] = writer.writeTime
 		stats.minWriteTime = min(stats.minWriteTime, writer.writeTime)
 		stats.maxWriteTime = max(stats.maxWriteTime, writer.writeTime)
 		stats.avgWriteTime += writer.writeTime

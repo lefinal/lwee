@@ -26,6 +26,21 @@ import (
 
 var ansiCodesRegexp = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\a|(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~])")
 
+type createdContainer struct {
+	logger *zap.Logger
+	name   string
+	id     string
+	config Config
+}
+
+func (container createdContainer) mehDetails() meh.Details {
+	return meh.Details{
+		"container_name":  container.name,
+		"container_image": container.config.Image,
+		"container_id":    container.id,
+	}
+}
+
 type dockerEngine struct {
 	logger       *zap.Logger
 	dockerClient *client.Client
@@ -38,7 +53,7 @@ type dockerEngine struct {
 	// createdContainersByID holds container configurations by their assigned
 	// container id. This is useful for more verbose log output like including image
 	// names.
-	createdContainersByID map[string]Config
+	createdContainersByID map[string]createdContainer
 	// createdContainersByIDMutex locks createdContainersByID.
 	createdContainersByIDMutex sync.RWMutex
 }
@@ -54,19 +69,23 @@ func NewDockerEngine(logger *zap.Logger) (Engine, error) {
 		dockerClient:              dockerClient,
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),
-		createdContainersByID:     map[string]Config{},
+		createdContainersByID:     map[string]createdContainer{},
 	}, nil
 }
 
-func (engine *dockerEngine) containerConfigByID(containerID string) Config {
+func (engine *dockerEngine) createdContainerByID(containerID string) createdContainer {
 	engine.createdContainersByIDMutex.RLock()
 	defer engine.createdContainersByIDMutex.RUnlock()
 	config, ok := engine.createdContainersByID[containerID]
 	if ok {
 		return config
 	}
-	return Config{
-		Image: "<unknown>",
+	return createdContainer{
+		logger: engine.logger.Named("unknown-container"),
+		name:   "<not_created>",
+		config: Config{
+			Image: "<unknown>",
+		},
 	}
 }
 
@@ -234,26 +253,69 @@ func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig
 			"host_config":      dockerContainerHostConfig,
 		})
 	}
-	engine.logger.Debug("container created", zap.String("container_id", response.ID))
+	containerID := response.ID
+	containerDetails, err := engine.dockerClient.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", meh.NewInternalErrFromErr(err, "inspect container", meh.Details{"container_id": containerID})
+	}
+	createdContainer := createdContainer{
+		name:   containerDetails.Name,
+		id:     containerID,
+		config: containerConfig,
+	}
+	createdContainer.logger = engine.logger.Named("container").
+		With(zap.String("container_name", createdContainer.name),
+			zap.String("image_name", createdContainer.config.Image),
+			zap.String("container_id", containerID))
+	createdContainer.logger.Debug("container created")
 	engine.createdContainersByIDMutex.Lock()
-	engine.createdContainersByID[response.ID] = containerConfig
+	engine.createdContainersByID[containerID] = createdContainer
 	engine.createdContainersByIDMutex.Unlock()
 	return response.ID, nil
 }
 
 func (engine *dockerEngine) StartContainer(ctx context.Context, containerID string) error {
-	engine.logger.Debug("start container", zap.String("container_id", containerID))
+	container := engine.createdContainerByID(containerID)
+	container.logger.Debug("start container")
 	err := engine.dockerClient.ContainerStart(ctx, containerID, dockertypes.ContainerStartOptions{})
 	if err != nil {
-		return meh.NewInternalErrFromErr(err, "start container", nil)
+		return meh.NewInternalErrFromErr(err, "start container", container.mehDetails())
 	}
+	// If the container exited due to an error, we might want to read error logs from
+	// it. However, if, for example, streams are used, action IO will lead to earlier
+	// errors and therefore the passed context is done. Therefore, we start a
+	// goroutine that waits with a timeout for the container to stop if the given
+	// context is canceled in order to log error results.
+	gotResultWithContextErr := make(chan error)
+	defer func() { gotResultWithContextErr <- ctx.Err() }()
+	go func() {
+		contextErr := <-gotResultWithContextErr
+		if contextErr == nil {
+			// Context not done. Nothing to do.
+			return
+		}
+		// Context was canceled.
+		const waitTimeoutDur = 3 * time.Second
+		timeout, cancel := context.WithTimeout(context.Background(), waitTimeoutDur)
+		defer cancel()
+		err := engine.waitForContainerStopped(timeout, containerID)
+		if err != nil {
+			mehlog.Log(container.logger, meh.Wrap(err, "wait for container stopped", container.mehDetails()))
+			return
+		}
+		container.logger.Debug("container stopped")
+	}()
 	return nil
 }
 
 func (engine *dockerEngine) ContainerIP(ctx context.Context, containerID string) (string, error) {
+	container := engine.createdContainerByID(containerID)
 	containerDetails, err := engine.dockerClient.ContainerInspect(ctx, containerID)
 	if err != nil {
-		return "", meh.NewInternalErrFromErr(err, "docker container inspect", nil)
+		return "", meh.NewInternalErrFromErr(err, "docker container inspect", container.mehDetails())
+	}
+	if containerDetails.NetworkSettings.IPAddress == "" {
+		return "", meh.NewNotFoundErr("container has no ip", container.mehDetails())
 	}
 	return containerDetails.NetworkSettings.IPAddress, nil
 }
@@ -274,85 +336,64 @@ func (writeCloser *containerStdinWriteCloser) Close() error {
 }
 
 func (engine *dockerEngine) ContainerStdin(ctx context.Context, containerID string) (io.WriteCloser, error) {
+	container := engine.createdContainerByID(containerID)
 	response, err := engine.dockerClient.ContainerAttach(ctx, containerID, dockertypes.ContainerAttachOptions{
 		Stdin:  true,
 		Stream: true,
 	})
 	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "container attach", nil)
+		return nil, meh.NewInternalErrFromErr(err, "container attach", container.mehDetails())
 	}
 	return &containerStdinWriteCloser{hijackedResponse: response}, nil
 }
 
 func (engine *dockerEngine) ContainerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
+	container := engine.createdContainerByID(containerID)
 	logs, err := engine.dockerClient.ContainerLogs(ctx, containerID, dockertypes.ContainerLogsOptions{
 		Since:      time.Time{}.Format(time.RFC3339),
 		ShowStdout: true,
 		Follow:     true,
 	})
 	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "get container stdout logs", nil)
+		return nil, meh.NewInternalErrFromErr(err, "get container stdout logs", container.mehDetails())
 	}
 	return logs, nil
 }
 
 func (engine *dockerEngine) ContainerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
+	container := engine.createdContainerByID(containerID)
 	logs, err := engine.dockerClient.ContainerLogs(ctx, containerID, dockertypes.ContainerLogsOptions{
 		ShowStderr: true,
 		Follow:     true,
 	})
 	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "get container stderr logs", nil)
+		return nil, meh.NewInternalErrFromErr(err, "get container stderr logs", container.mehDetails())
 	}
 	return logs, nil
 }
 
 func (engine *dockerEngine) StopContainer(ctx context.Context, containerID string) error {
-	engine.logger.Debug("stop container", zap.String("container_id", containerID))
+	container := engine.createdContainerByID(containerID)
+	container.logger.Debug("stop container", zap.String("container_id", containerID))
 	err := engine.dockerClient.ContainerStop(ctx, containerID, dockercontainer.StopOptions{})
 	if err != nil {
-		return meh.NewInternalErrFromErr(err, "stop container", nil)
+		return meh.NewInternalErrFromErr(err, "stop container", container.mehDetails())
 	}
 	return nil
 }
 
 func (engine *dockerEngine) WaitForContainerStopped(ctx context.Context, containerID string) error {
-	// If the container exited due to an error, we might want to read error logs from
-	// it. However, if, for example, streams are used, action IO will lead to earlier
-	// errors and therefore the passed context is done. Therefore, we start a
-	// goroutine that waits with a timeout for the container to stop if the given
-	// context is canceled in order to log error results.
-	gotResultWithContextErr := make(chan error)
-	defer func() { gotResultWithContextErr <- ctx.Err() }()
-	go func() {
-		contextErr := <-gotResultWithContextErr
-		if contextErr == nil {
-			// Context not done. Nothing to do.
-			return
-		}
-		// Context was canceled.
-		const waitTimeoutDur = 3 * time.Second
-		timeout, cancel := context.WithTimeout(context.Background(), waitTimeoutDur)
-		defer cancel()
-		err := engine.waitForContainerStopped(timeout, containerID)
-		if err != nil {
-			mehlog.Log(engine.logger, meh.Wrap(err, "wait for container stopped", meh.Details{"container_id": containerID}))
-			return
-		}
-	}()
-
 	return engine.waitForContainerStopped(ctx, containerID)
 }
 
 func (engine *dockerEngine) waitForContainerStopped(ctx context.Context, containerID string) error {
+	container := engine.createdContainerByID(containerID)
 	statusCh, errCh := engine.dockerClient.ContainerWait(ctx, containerID, dockercontainer.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
 		return meh.NewInternalErrFromErr(err, "container wait for not running", nil)
 	case response := <-statusCh:
-		engine.logger.Debug("container now stopped",
-			zap.String("container_id", containerID),
-			zap.String("image_name", engine.containerConfigByID(containerID).Image))
+		container.logger.Debug("container now stopped")
 		if response.StatusCode != 0 {
 			var errorReportBuilder strings.Builder
 			errorReportBuilder.WriteString(fmt.Sprintf("container %s exited with code %d",
@@ -365,22 +406,20 @@ func (engine *dockerEngine) waitForContainerStopped(ctx context.Context, contain
 				_, _ = stdcopy.StdCopy(&errorReportBuilder, &errorReportBuilder, stderrLogs)
 				errorReportBuilder.WriteString("\n******** end of stderr logs ********\n")
 			}
-			engine.logger.Error(errorReportBuilder.String(),
-				zap.String("image_name", engine.containerConfigByID(containerID).Image),
-				zap.Error(openStderrErr))
-			return meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", response.StatusCode),
-				meh.Details{"image_name": engine.containerConfigByID(containerID).Image})
+			container.logger.Error(errorReportBuilder.String(), zap.Error(openStderrErr))
+			return meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", response.StatusCode), container.mehDetails())
 		}
 	}
 	return nil
 }
 
 func (engine *dockerEngine) RemoveContainer(ctx context.Context, containerID string) error {
-	engine.logger.Debug("remove container", zap.String("container_id", containerID))
+	container := engine.createdContainerByID(containerID)
+	container.logger.Debug("remove container")
 	err := engine.dockerClient.ContainerRemove(ctx, containerID, dockertypes.ContainerRemoveOptions{Force: true})
 	if err != nil {
-		return meh.NewInternalErrFromErr(err, "docker container remove", nil)
+		return meh.NewInternalErrFromErr(err, "docker container remove", container.mehDetails())
 	}
-	engine.logger.Debug("container removed", zap.String("container_id", containerID))
+	container.logger.Debug("container removed")
 	return nil
 }
