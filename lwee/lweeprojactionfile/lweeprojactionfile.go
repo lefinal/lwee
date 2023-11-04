@@ -2,7 +2,7 @@ package lweeprojactionfile
 
 import (
 	"encoding/json"
-	"github.com/lefinal/lwee/lwee/lweefile"
+	"github.com/lefinal/lwee/lwee/fileparse"
 	"github.com/lefinal/meh"
 	"os"
 	k8syaml "sigs.k8s.io/yaml"
@@ -31,8 +31,8 @@ type ProjActionConfigs map[string]ProjActionConfig
 
 func (config *ProjActionConfigs) UnmarshalJSON(data []byte) error {
 	var err error
-	*config, err = lweefile.ParseMapBasedOnType[ProjActionType, ProjActionConfig](data, map[ProjActionType]lweefile.Unmarshaller[ProjActionConfig]{
-		ProjActionTypeImage: lweefile.UnmarshallerFn[ProjActionConfigImage](projActionConfigConstructor[ProjActionConfigImage]),
+	*config, err = fileparse.ParseMapBasedOnType[ProjActionType, ProjActionConfig](data, map[ProjActionType]fileparse.Unmarshaller[ProjActionConfig]{
+		ProjActionTypeImage: fileparse.UnmarshallerFn[ProjActionConfigImage](projActionConfigConstructor[ProjActionConfigImage]),
 	}, "type")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)

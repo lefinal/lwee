@@ -2,7 +2,7 @@ package lweeflowfile
 
 import (
 	"encoding/json"
-	"github.com/lefinal/lwee/lwee/lweefile"
+	"github.com/lefinal/lwee/lwee/fileparse"
 	"github.com/lefinal/meh"
 	"os"
 	k8syaml "sigs.k8s.io/yaml"
@@ -10,6 +10,7 @@ import (
 )
 
 type Flow struct {
+	Raw         map[string]any
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Inputs      FlowInputs        `json:"in"`
@@ -35,8 +36,8 @@ type FlowInputs map[string]FlowInput
 
 func (in *FlowInputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*in, err = lweefile.ParseMapBasedOnType(data, map[FlowInputType]lweefile.Unmarshaller[FlowInput]{
-		FlowInputTypeFile: lweefile.UnmarshallerFn[FlowInputFile](flowInputConstructor[FlowInputFile]),
+	*in, err = fileparse.ParseMapBasedOnType(data, map[FlowInputType]fileparse.Unmarshaller[FlowInput]{
+		FlowInputTypeFile: fileparse.UnmarshallerFn[FlowInputFile](flowInputConstructor[FlowInputFile]),
 	}, "providedAs")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)
@@ -71,8 +72,8 @@ type FlowOutputs map[string]FlowOutput
 
 func (out *FlowOutputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*out, err = lweefile.ParseMapBasedOnType(data, map[FlowOutputType]lweefile.Unmarshaller[FlowOutput]{
-		FlowOutputTypeFile: lweefile.UnmarshallerFn[FlowOutputFile](flowOutputConstructor[FlowOutputFile]),
+	*out, err = fileparse.ParseMapBasedOnType(data, map[FlowOutputType]fileparse.Unmarshaller[FlowOutput]{
+		FlowOutputTypeFile: fileparse.UnmarshallerFn[FlowOutputFile](flowOutputConstructor[FlowOutputFile]),
 	}, "provideAs")
 	if err != nil {
 		return meh.Wrap(err, "parse map based on type", nil)
@@ -103,6 +104,12 @@ func ParseFlow(rawFlow json.RawMessage) (Flow, error) {
 	if err != nil {
 		return Flow{}, meh.NewBadInputErrFromErr(err, "unmarshal flow", nil)
 	}
+	m := make(map[string]any)
+	err = json.Unmarshal(rawFlow, &m)
+	if err != nil {
+		return Flow{}, meh.NewBadInputErrFromErr(err, "parse raw flow into map", nil)
+	}
+	flow.Raw = m
 	return flow, nil
 }
 

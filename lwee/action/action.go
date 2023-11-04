@@ -7,6 +7,7 @@ import (
 	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
+	"github.com/lefinal/lwee/lwee/templaterender"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"io"
@@ -118,14 +119,24 @@ func (base *Base) ProvideOutput(ctx context.Context, outputName string, writer a
 
 type Factory struct {
 	FlowName        string
+	RawFlow         map[string]any
 	Locator         *locator.Locator
 	ContainerEngine container.Engine
 	IOSupplier      actionio.Supplier
 }
 
 func (factory *Factory) NewAction(logger *zap.Logger, actionName string, fileAction lweeflowfile.Action) (Action, error) {
+	renderData := templaterender.Data{
+		Flow: templaterender.FlowData{
+			Raw: factory.RawFlow,
+		},
+		Action: templaterender.ActionData{
+			Name: actionName,
+		},
+	}
 	var builtAction action
 	var err error
+	// Build action base.
 	base := &Base{
 		logger:                            logger,
 		actionName:                        actionName,
@@ -135,14 +146,15 @@ func (factory *Factory) NewAction(logger *zap.Logger, actionName string, fileAct
 		inputIngestionRequestsByInputName: make(map[string]inputIngestionRequestWithIngestor),
 		outputOffersByOutputName:          make(map[string]OutputOfferWithOutputter),
 	}
+	// Create the actual action.
 	switch runner := fileAction.Runner.Runner.(type) {
 	case lweeflowfile.ActionRunnerImage:
-		builtAction, err = factory.newImageAction(base, runner)
+		builtAction, err = factory.newImageAction(base, renderData, runner)
 		if err != nil {
 			return nil, meh.Wrap(err, "new image action", nil)
 		}
 	case lweeflowfile.ActionRunnerProjectAction:
-		builtAction, err = factory.newProjectAction(base, runner)
+		builtAction, err = factory.newProjectAction(base, renderData, runner)
 		if err != nil {
 			return nil, meh.Wrap(err, "new project action", nil)
 		}

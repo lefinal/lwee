@@ -35,11 +35,12 @@ type Image struct {
 
 type imageRunner struct {
 	*Base
-	containerEngine       container.Engine
-	imageTag              string
-	command               []string
-	containerWorkspaceDir string
-	containerID           string
+	containerEngine            container.Engine
+	imageTag                   string
+	command                    []string
+	containerWorkspaceHostDir  string
+	containerWorkspaceMountDir string
+	containerID                string
 	// containerState is the state of the container. It is locked using
 	// containerRunningCond.
 	containerState containerState
@@ -113,7 +114,7 @@ func (action *imageRunner) newContainerWorkspaceFileInputRequest(input lweeflowf
 			SourceName:              input.Source,
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
-			filename := path.Join(action.containerWorkspaceDir, input.Filename)
+			filename := path.Join(action.containerWorkspaceHostDir, input.Filename)
 			err := os.MkdirAll(path.Dir(filename), 0750)
 			if err != nil {
 				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
@@ -226,7 +227,7 @@ func (action *imageRunner) newContainerWorkspaceFileOutputOffer(output lweeflowf
 			if err != nil {
 				return meh.Wrap(err, "wait for container done", nil)
 			}
-			filename := path.Join(action.containerWorkspaceDir, output.Filename)
+			filename := path.Join(action.containerWorkspaceHostDir, output.Filename)
 			action.logger.Debug("container done. now providing container workspace file output.",
 				zap.String("filename", filename))
 			select {
@@ -321,8 +322,8 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 		ExposedPorts: nil,
 		VolumeMounts: []container.VolumeMount{
 			{
-				Source: action.containerWorkspaceDir,
-				Target: "/lwee",
+				Source: action.containerWorkspaceHostDir,
+				Target: action.containerWorkspaceMountDir,
 			},
 		},
 		Command: action.command,

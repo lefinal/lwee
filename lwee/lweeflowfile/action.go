@@ -1,7 +1,8 @@
 package lweeflowfile
 
 import (
-	"github.com/lefinal/lwee/lwee/lweefile"
+	"github.com/lefinal/lwee/lwee/fileparse"
+	"github.com/lefinal/lwee/lwee/templaterender"
 	"github.com/lefinal/meh"
 )
 
@@ -34,11 +35,11 @@ func actionInputConstructor[T ActionInput](t T) ActionInput {
 
 func (in *ActionInputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*in, err = lweefile.ParseMapBasedOnType[ActionInputType, ActionInput](data, map[ActionInputType]lweefile.Unmarshaller[ActionInput]{
-		ActionInputTypeContainerWorkspaceFile: lweefile.UnmarshallerFn[ActionInputContainerWorkspaceFile](actionInputConstructor[ActionInputContainerWorkspaceFile]),
-		ActionInputTypeFile:                   lweefile.UnmarshallerFn[ActionInputFile](actionInputConstructor[ActionInputFile]),
-		ActionInputTypeStdin:                  lweefile.UnmarshallerFn[ActionInputStdin](actionInputConstructor[ActionInputStdin]),
-		ActionInputTypeStream:                 lweefile.UnmarshallerFn[ActionInputStream](actionInputConstructor[ActionInputStream]),
+	*in, err = fileparse.ParseMapBasedOnType[ActionInputType, ActionInput](data, map[ActionInputType]fileparse.Unmarshaller[ActionInput]{
+		ActionInputTypeContainerWorkspaceFile: fileparse.UnmarshallerFn[ActionInputContainerWorkspaceFile](actionInputConstructor[ActionInputContainerWorkspaceFile]),
+		ActionInputTypeFile:                   fileparse.UnmarshallerFn[ActionInputFile](actionInputConstructor[ActionInputFile]),
+		ActionInputTypeStdin:                  fileparse.UnmarshallerFn[ActionInputStdin](actionInputConstructor[ActionInputStdin]),
+		ActionInputTypeStream:                 fileparse.UnmarshallerFn[ActionInputStream](actionInputConstructor[ActionInputStream]),
 	}, "provideAs")
 	if err != nil {
 		return meh.Wrap(err, "parse action input map based on type", nil)
@@ -72,6 +73,14 @@ func (input ActionInputFile) Type() string {
 	return string(ActionInputTypeFile)
 }
 
+func (input ActionInputFile) Render(renderer *templaterender.Renderer) error {
+	err := renderer.RenderString(&input.Filename)
+	if err != nil {
+		return meh.Wrap(err, "render filename", nil)
+	}
+	return nil
+}
+
 type ActionInputStdin struct {
 	ActionInputBase
 }
@@ -99,6 +108,7 @@ const (
 
 type ActionRunner interface {
 	Type() string
+	Render(renderer *templaterender.Renderer) error
 }
 
 func actionRunnerConstructor[T ActionRunner](t T) ActionRunner {
@@ -111,10 +121,10 @@ type ActionRunnerHolder struct {
 
 func (runner *ActionRunnerHolder) UnmarshalJSON(data []byte) error {
 	var err error
-	runner.Runner, err = lweefile.ParseBasedOnType[ActionRunnerType, ActionRunner](data, map[ActionRunnerType]lweefile.Unmarshaller[ActionRunner]{
-		ActionRunnerTypeCommand:       lweefile.UnmarshallerFn[ActionRunnerCommand](actionRunnerConstructor[ActionRunnerCommand]),
-		ActionRunnerTypeImage:         lweefile.UnmarshallerFn[ActionRunnerImage](actionRunnerConstructor[ActionRunnerImage]),
-		ActionRunnerTypeProjectAction: lweefile.UnmarshallerFn[ActionRunnerProjectAction](actionRunnerConstructor[ActionRunnerProjectAction]),
+	runner.Runner, err = fileparse.ParseBasedOnType[ActionRunnerType, ActionRunner](data, map[ActionRunnerType]fileparse.Unmarshaller[ActionRunner]{
+		ActionRunnerTypeCommand:       fileparse.UnmarshallerFn[ActionRunnerCommand](actionRunnerConstructor[ActionRunnerCommand]),
+		ActionRunnerTypeImage:         fileparse.UnmarshallerFn[ActionRunnerImage](actionRunnerConstructor[ActionRunnerImage]),
+		ActionRunnerTypeProjectAction: fileparse.UnmarshallerFn[ActionRunnerProjectAction](actionRunnerConstructor[ActionRunnerProjectAction]),
 	}, "type")
 	if err != nil {
 		return meh.Wrap(err, "parse action runner based on type", nil)
@@ -127,13 +137,25 @@ type ActionRunnerBase struct {
 
 type ActionRunnerCommand struct {
 	ActionRunnerBase
-	Command string `json:"command"`
-	Args    string `json:"args"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
 	// TODO: Add assert-stuff.
 }
 
 func (runner ActionRunnerCommand) Type() string {
 	return string(ActionRunnerTypeCommand)
+}
+
+func (runner ActionRunnerCommand) Render(renderer *templaterender.Renderer) error {
+	err := renderer.RenderString(&runner.Command)
+	if err != nil {
+		return meh.Wrap(err, "render command", nil)
+	}
+	err = renderer.RenderStrings(runner.Args)
+	if err != nil {
+		return meh.Wrap(err, "render args", nil)
+	}
+	return nil
 }
 
 type ActionRunnerImage struct {
@@ -146,6 +168,18 @@ func (runner ActionRunnerImage) Type() string {
 	return string(ActionRunnerTypeImage)
 }
 
+func (runner ActionRunnerImage) Render(renderer *templaterender.Renderer) error {
+	err := renderer.RenderString(&runner.Image)
+	if err != nil {
+		return meh.Wrap(err, "render image", nil)
+	}
+	err = renderer.RenderStrings(runner.Command)
+	if err != nil {
+		return meh.Wrap(err, "render command", nil)
+	}
+	return nil
+}
+
 type ActionRunnerProjectAction struct {
 	ActionRunnerBase
 	Name    string   `json:"name"`
@@ -155,6 +189,18 @@ type ActionRunnerProjectAction struct {
 
 func (runner ActionRunnerProjectAction) Type() string {
 	return string(ActionRunnerTypeProjectAction)
+}
+
+func (runner ActionRunnerProjectAction) Render(renderer *templaterender.Renderer) error {
+	err := renderer.RenderString(&runner.Config)
+	if err != nil {
+		return meh.Wrap(err, "render config name", nil)
+	}
+	err = renderer.RenderStrings(runner.Command)
+	if err != nil {
+		return meh.Wrap(err, "render command", nil)
+	}
+	return nil
 }
 
 type ActionOutputType string
@@ -177,10 +223,10 @@ type ActionOutputs map[string]ActionOutput
 
 func (out *ActionOutputs) UnmarshalJSON(data []byte) error {
 	var err error
-	*out, err = lweefile.ParseMapBasedOnType[ActionOutputType, ActionOutput](data, map[ActionOutputType]lweefile.Unmarshaller[ActionOutput]{
-		ActionOutputTypeContainerWorkspaceFile: lweefile.UnmarshallerFn[ActionOutputContainerWorkspaceFile](actionOutputConstructor[ActionOutputContainerWorkspaceFile]),
-		ActionOutputTypeStdout:                 lweefile.UnmarshallerFn[ActionOutputStdout](actionOutputConstructor[ActionOutputStdout]),
-		ActionOutputTypeStream:                 lweefile.UnmarshallerFn[ActionOutputStream](actionOutputConstructor[ActionOutputStream]),
+	*out, err = fileparse.ParseMapBasedOnType[ActionOutputType, ActionOutput](data, map[ActionOutputType]fileparse.Unmarshaller[ActionOutput]{
+		ActionOutputTypeContainerWorkspaceFile: fileparse.UnmarshallerFn[ActionOutputContainerWorkspaceFile](actionOutputConstructor[ActionOutputContainerWorkspaceFile]),
+		ActionOutputTypeStdout:                 fileparse.UnmarshallerFn[ActionOutputStdout](actionOutputConstructor[ActionOutputStdout]),
+		ActionOutputTypeStream:                 fileparse.UnmarshallerFn[ActionOutputStream](actionOutputConstructor[ActionOutputStream]),
 	}, "providedAs")
 	if err != nil {
 		return meh.Wrap(err, "parse action output based on type", nil)
@@ -188,7 +234,8 @@ func (out *ActionOutputs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type ActionOutputBase struct{}
+type ActionOutputBase struct {
+}
 
 type ActionOutputContainerWorkspaceFile struct {
 	ActionOutputBase

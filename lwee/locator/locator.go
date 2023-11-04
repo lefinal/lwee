@@ -121,6 +121,10 @@ func (locator *Locator) ActionTempDir() string {
 	return locator.actionTempDir
 }
 
+func (locator *Locator) ContainerWorkspaceMountDir() string {
+	return "/lwee"
+}
+
 func gitKeepDir(dir string) error {
 	gitKeepFilename := path.Join(dir, ".gitkeep")
 	err := CreateIfNotExists(gitKeepFilename, []byte{})

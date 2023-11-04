@@ -1,4 +1,4 @@
-package lweefile
+package fileparse
 
 import (
 	"encoding/json"
@@ -40,12 +40,12 @@ func ParseMapBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmars
 
 func ParseBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmarshaller[S], typeFieldName string) (S, error) {
 	var s S
-	var typeBase map[string]any
-	err := json.Unmarshal(data, &typeBase)
+	var raw map[string]any
+	err := json.Unmarshal(data, &raw)
 	if err != nil {
 		return s, meh.NewBadInputErrFromErr(err, "unmarshal type base", nil)
 	}
-	typeNameRaw := typeBase[typeFieldName]
+	typeNameRaw := raw[typeFieldName]
 	if typeNameRaw == nil || typeNameRaw == "" {
 		return s, meh.NewBadInputErr("missing type name", meh.Details{"type_field_name": typeFieldName})
 	}

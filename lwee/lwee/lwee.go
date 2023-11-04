@@ -54,6 +54,7 @@ func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locato
 	}
 	lwee.actionFactory = &action.Factory{
 		FlowName:        lwee.flowFile.Name,
+		RawFlow:         lwee.flowFile.Raw,
 		Locator:         lwee.Locator,
 		ContainerEngine: lwee.containerEngine,
 		IOSupplier:      lwee.ioSupplier,
