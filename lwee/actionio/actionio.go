@@ -250,8 +250,12 @@ func (supplier *supplier) Validate() error {
 	// Check for missing source providers (writers).
 	for _, forwarder := range supplier.forwarders {
 		if forwarder.writer.reader == nil {
+			requestedByReaders := make([]string, 0)
+			for _, reader := range forwarder.readers {
+				requestedByReaders = append(requestedByReaders, reader.requester)
+			}
 			return meh.NewInternalErr(fmt.Sprintf("missing source provider for source %q", forwarder.sourceName),
-				meh.Details{"requested_by_readers": len(forwarder.readers)})
+				meh.Details{"requested_by_readers": requestedByReaders})
 		}
 	}
 	return nil

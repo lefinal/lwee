@@ -32,7 +32,7 @@ func ParseMapBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmars
 	for k, rawJSON := range rawJSONMap {
 		m[k], err = ParseBasedOnType(rawJSON, typeMapping, typeFieldName)
 		if err != nil {
-			return nil, meh.Wrap(err, fmt.Sprintf("parse %q based on type", k), nil)
+			return nil, meh.Wrap(err, fmt.Sprintf("parse %q based on type", k), meh.Details{"raw_map": rawJSONMap})
 		}
 	}
 	return m, nil
@@ -43,7 +43,7 @@ func ParseBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmarshal
 	var raw map[string]any
 	err := json.Unmarshal(data, &raw)
 	if err != nil {
-		return s, meh.NewBadInputErrFromErr(err, "unmarshal type base", nil)
+		return s, meh.NewBadInputErrFromErr(err, "unmarshal type base", meh.Details{"tried_to_unmarshal_type_base": string(data)})
 	}
 	typeNameRaw := raw[typeFieldName]
 	if typeNameRaw == nil || typeNameRaw == "" {
