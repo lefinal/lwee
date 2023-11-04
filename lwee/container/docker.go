@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 	"github.com/lefinal/meh"
 	"github.com/lefinal/meh/mehlog"
@@ -361,7 +362,7 @@ func (engine *dockerEngine) waitForContainerStopped(ctx context.Context, contain
 				errorReportBuilder.WriteString(". stderr logs cannot be retrieved")
 			} else {
 				errorReportBuilder.WriteString("\n\n******** begin of stderr logs ********\n")
-				_, _ = io.Copy(&errorReportBuilder, stderrLogs)
+				_, _ = stdcopy.StdCopy(&errorReportBuilder, &errorReportBuilder, stderrLogs)
 				errorReportBuilder.WriteString("\n******** end of stderr logs ********\n")
 			}
 			engine.logger.Error(errorReportBuilder.String(),
