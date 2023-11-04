@@ -205,11 +205,14 @@ func (engine *dockerEngine) CreateContainer(ctx context.Context, containerConfig
 		ExposedPorts: containerConfig.ExposedPorts,
 		Cmd:          containerConfig.Command,
 		Image:        containerConfig.Image,
+		StdinOnce:    true,
+		OpenStdin:    true,
 	}
-	dockerContainerConfig.StdinOnce = true
-	dockerContainerConfig.OpenStdin = true
 	dockerContainerHostConfig := &dockercontainer.HostConfig{
-		Mounts: make([]mount.Mount, 0),
+		// We need to set auto-remove to false in order to read stdout logs even if it
+		// finishes too fast. Otherwise, the logs would not be available.
+		AutoRemove: false,
+		Mounts:     make([]mount.Mount, 0),
 	}
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		dockerContainerHostConfig.Mounts = append(dockerContainerHostConfig.Mounts, mount.Mount{
