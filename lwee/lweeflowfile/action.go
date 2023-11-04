@@ -16,10 +16,10 @@ type Action struct {
 type ActionInputType string
 
 const (
-	ActionInputTypeContainerWorkspaceFile ActionInputType = "container-workspace-file"
-	ActionInputTypeFile                   ActionInputType = "file"
-	ActionInputTypeStdin                  ActionInputType = "stdin"
-	ActionInputTypeStream                 ActionInputType = "stream"
+	ActionInputTypeWorkspaceFile ActionInputType = "workspace-file"
+	ActionInputTypeFile          ActionInputType = "file"
+	ActionInputTypeStdin         ActionInputType = "stdin"
+	ActionInputTypeStream        ActionInputType = "stream"
 )
 
 type ActionInput interface {
@@ -36,10 +36,10 @@ func actionInputConstructor[T ActionInput](t T) ActionInput {
 func (in *ActionInputs) UnmarshalJSON(data []byte) error {
 	var err error
 	*in, err = fileparse.ParseMapBasedOnType[ActionInputType, ActionInput](data, map[ActionInputType]fileparse.Unmarshaller[ActionInput]{
-		ActionInputTypeContainerWorkspaceFile: fileparse.UnmarshallerFn[ActionInputContainerWorkspaceFile](actionInputConstructor[ActionInputContainerWorkspaceFile]),
-		ActionInputTypeFile:                   fileparse.UnmarshallerFn[ActionInputFile](actionInputConstructor[ActionInputFile]),
-		ActionInputTypeStdin:                  fileparse.UnmarshallerFn[ActionInputStdin](actionInputConstructor[ActionInputStdin]),
-		ActionInputTypeStream:                 fileparse.UnmarshallerFn[ActionInputStream](actionInputConstructor[ActionInputStream]),
+		ActionInputTypeWorkspaceFile: fileparse.UnmarshallerFn[ActionInputWorkspaceFile](actionInputConstructor[ActionInputWorkspaceFile]),
+		ActionInputTypeFile:          fileparse.UnmarshallerFn[ActionInputFile](actionInputConstructor[ActionInputFile]),
+		ActionInputTypeStdin:         fileparse.UnmarshallerFn[ActionInputStdin](actionInputConstructor[ActionInputStdin]),
+		ActionInputTypeStream:        fileparse.UnmarshallerFn[ActionInputStream](actionInputConstructor[ActionInputStream]),
 	}, "provideAs")
 	if err != nil {
 		return meh.Wrap(err, "parse action input map based on type", nil)
@@ -55,13 +55,13 @@ func (base ActionInputBase) SourceName() string {
 	return base.Source
 }
 
-type ActionInputContainerWorkspaceFile struct {
+type ActionInputWorkspaceFile struct {
 	ActionInputBase
 	Filename string `json:"filename"`
 }
 
-func (input ActionInputContainerWorkspaceFile) Type() string {
-	return string(ActionInputTypeContainerWorkspaceFile)
+func (input ActionInputWorkspaceFile) Type() string {
+	return string(ActionInputTypeWorkspaceFile)
 }
 
 type ActionInputFile struct {
@@ -206,9 +206,9 @@ func (runner ActionRunnerProjectAction) Render(renderer *templaterender.Renderer
 type ActionOutputType string
 
 const (
-	ActionOutputTypeContainerWorkspaceFile ActionOutputType = "container-workspace-file"
-	ActionOutputTypeStdout                 ActionOutputType = "stdout"
-	ActionOutputTypeStream                 ActionOutputType = "stream"
+	ActionOutputTypeWorkspaceFile ActionOutputType = "workspace-file"
+	ActionOutputTypeStdout        ActionOutputType = "stdout"
+	ActionOutputTypeStream        ActionOutputType = "stream"
 )
 
 type ActionOutput interface {
@@ -224,9 +224,9 @@ type ActionOutputs map[string]ActionOutput
 func (out *ActionOutputs) UnmarshalJSON(data []byte) error {
 	var err error
 	*out, err = fileparse.ParseMapBasedOnType[ActionOutputType, ActionOutput](data, map[ActionOutputType]fileparse.Unmarshaller[ActionOutput]{
-		ActionOutputTypeContainerWorkspaceFile: fileparse.UnmarshallerFn[ActionOutputContainerWorkspaceFile](actionOutputConstructor[ActionOutputContainerWorkspaceFile]),
-		ActionOutputTypeStdout:                 fileparse.UnmarshallerFn[ActionOutputStdout](actionOutputConstructor[ActionOutputStdout]),
-		ActionOutputTypeStream:                 fileparse.UnmarshallerFn[ActionOutputStream](actionOutputConstructor[ActionOutputStream]),
+		ActionOutputTypeWorkspaceFile: fileparse.UnmarshallerFn[ActionOutputWorkspaceFile](actionOutputConstructor[ActionOutputWorkspaceFile]),
+		ActionOutputTypeStdout:        fileparse.UnmarshallerFn[ActionOutputStdout](actionOutputConstructor[ActionOutputStdout]),
+		ActionOutputTypeStream:        fileparse.UnmarshallerFn[ActionOutputStream](actionOutputConstructor[ActionOutputStream]),
 	}, "providedAs")
 	if err != nil {
 		return meh.Wrap(err, "parse action output based on type", nil)
@@ -237,13 +237,13 @@ func (out *ActionOutputs) UnmarshalJSON(data []byte) error {
 type ActionOutputBase struct {
 }
 
-type ActionOutputContainerWorkspaceFile struct {
+type ActionOutputWorkspaceFile struct {
 	ActionOutputBase
 	Filename string `json:"filename"`
 }
 
-func (output ActionOutputContainerWorkspaceFile) Type() string {
-	return string(ActionOutputTypeContainerWorkspaceFile)
+func (output ActionOutputWorkspaceFile) Type() string {
+	return string(ActionOutputTypeWorkspaceFile)
 }
 
 type ActionOutputStdout struct {

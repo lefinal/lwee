@@ -8,23 +8,22 @@ import (
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"os"
-	"path"
 	"sync"
 	"time"
 )
 
 type imageActionExtraRenderData struct {
-	ContainerWorkspaceHostDir  string
-	ContainerWorkspaceMountDir string
+	WorkspaceHostDir  string
+	WorkspaceMountDir string
 }
 
 func (factory *Factory) newImageAction(base *Base, renderData templaterender.Data, imageActionDetails lweeflowfile.ActionRunnerImage) (action, error) {
 	// Render action runner details.
-	containerWorkspaceHostDir := path.Join(factory.Locator.ActionTempDirByAction(base.actionName), "container-workspace")
-	containerWorkspaceMountDir := factory.Locator.ContainerWorkspaceMountDir()
+	workspaceHostDir := factory.Locator.ActionWorkspaceDirByAction(base.actionName)
+	workspaceMountDir := factory.Locator.ContainerWorkspaceMountDir()
 	renderData.Action.Extras = imageActionExtraRenderData{
-		ContainerWorkspaceHostDir:  containerWorkspaceHostDir,
-		ContainerWorkspaceMountDir: containerWorkspaceMountDir,
+		WorkspaceHostDir:  workspaceHostDir,
+		WorkspaceMountDir: workspaceMountDir,
 	}
 	renderer := templaterender.New(renderData)
 	err := imageActionDetails.Render(renderer)
@@ -34,21 +33,21 @@ func (factory *Factory) newImageAction(base *Base, renderData templaterender.Dat
 	// Build the actual action.
 	imageAction := &imageAction{
 		imageRunner: imageRunner{
-			Base:                       base,
-			containerEngine:            factory.ContainerEngine,
-			imageTag:                   imageActionDetails.Image,
-			command:                    imageActionDetails.Command,
-			containerWorkspaceHostDir:  containerWorkspaceHostDir,
-			containerWorkspaceMountDir: containerWorkspaceMountDir,
-			containerState:             containerStateReady,
-			containerRunningCond:       sync.NewCond(&sync.Mutex{}),
-			streamConnector:            lweestream.NewConnector(base.logger.Named("stream-connector")),
+			Base:                 base,
+			containerEngine:      factory.ContainerEngine,
+			imageTag:             imageActionDetails.Image,
+			command:              imageActionDetails.Command,
+			workspaceHostDir:     workspaceHostDir,
+			workspaceMountDir:    workspaceMountDir,
+			containerState:       containerStateReady,
+			containerRunningCond: sync.NewCond(&sync.Mutex{}),
+			streamConnector:      lweestream.NewConnector(base.logger.Named("stream-connector")),
 		},
 	}
-	err = os.MkdirAll(imageAction.containerWorkspaceHostDir, 0750)
+	err = os.MkdirAll(imageAction.workspaceHostDir, 0750)
 	if err != nil {
-		return nil, meh.NewInternalErrFromErr(err, "create container workspace dir",
-			meh.Details{"dir": imageAction.containerWorkspaceHostDir})
+		return nil, meh.NewInternalErrFromErr(err, "create workspace dir",
+			meh.Details{"dir": imageAction.workspaceHostDir})
 	}
 	return imageAction, nil
 }

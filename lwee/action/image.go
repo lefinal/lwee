@@ -35,12 +35,12 @@ type Image struct {
 
 type imageRunner struct {
 	*Base
-	containerEngine            container.Engine
-	imageTag                   string
-	command                    []string
-	containerWorkspaceHostDir  string
-	containerWorkspaceMountDir string
-	containerID                string
+	containerEngine   container.Engine
+	imageTag          string
+	command           []string
+	workspaceHostDir  string
+	workspaceMountDir string
+	containerID       string
 	// containerState is the state of the container. It is locked using
 	// containerRunningCond.
 	containerState containerState
@@ -54,8 +54,6 @@ func (action *imageRunner) registerInputIngestionRequests() error {
 	for inputName, input := range action.fileActionInputs {
 		var inputRequest inputIngestionRequestWithIngestor
 		switch input := input.(type) {
-		case lweeflowfile.ActionInputContainerWorkspaceFile:
-			inputRequest = action.newContainerWorkspaceFileInputRequest(input)
 		case lweeflowfile.ActionInputStdin:
 			// Assure only one input with stdin-type.
 			if stdinInputRegistered {
@@ -69,6 +67,8 @@ func (action *imageRunner) registerInputIngestionRequests() error {
 			if err != nil {
 				return meh.Wrap(err, "new stream input request", meh.Details{"input_name": inputName})
 			}
+		case lweeflowfile.ActionInputWorkspaceFile:
+			inputRequest = action.newWorkspaceFileInputRequest(input)
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action input %q has unsupported type: %s", inputName, input.Type()), nil)
 		}
@@ -83,8 +83,6 @@ func (action *imageRunner) registerOutputProviders() error {
 	for outputName, output := range action.fileActionOutputs {
 		var outputOffer OutputOfferWithOutputter
 		switch output := output.(type) {
-		case lweeflowfile.ActionOutputContainerWorkspaceFile:
-			outputOffer = action.newContainerWorkspaceFileOutputOffer(output)
 		case lweeflowfile.ActionOutputStdout:
 			// Assure only one output with stdout-type.
 			if stdoutOutputRegistered {
@@ -98,6 +96,8 @@ func (action *imageRunner) registerOutputProviders() error {
 			if err != nil {
 				return meh.Wrap(err, "new stream output offer", meh.Details{"output_name": outputName})
 			}
+		case lweeflowfile.ActionOutputWorkspaceFile:
+			outputOffer = action.newWorkspaceFileOutputOffer(output)
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action output %s has unsupported type: %s", outputName, output.Type()), nil)
 		}
@@ -105,36 +105,6 @@ func (action *imageRunner) registerOutputProviders() error {
 		action.outputOffersByOutputName[outputName] = outputOffer
 	}
 	return nil
-}
-
-func (action *imageRunner) newContainerWorkspaceFileInputRequest(input lweeflowfile.ActionInputContainerWorkspaceFile) inputIngestionRequestWithIngestor {
-	return inputIngestionRequestWithIngestor{
-		request: InputIngestionRequest{
-			RequireFinishUntilPhase: PhasePreStart,
-			SourceName:              input.Source,
-		},
-		ingest: func(ctx context.Context, source io.Reader) error {
-			filename := path.Join(action.containerWorkspaceHostDir, input.Filename)
-			err := os.MkdirAll(path.Dir(filename), 0750)
-			if err != nil {
-				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
-			}
-			f, err := os.Create(filename)
-			if err != nil {
-				return meh.NewInternalErrFromErr(err, "create container workspace file", meh.Details{"filename": filename})
-			}
-			defer func() { _ = f.Close() }()
-			_, err = io.Copy(f, source)
-			if err != nil {
-				return meh.NewInternalErrFromErr(err, "write container workspace file", meh.Details{"filename": filename})
-			}
-			err = f.Close()
-			if err != nil {
-				return meh.NewInternalErrFromErr(err, "close written container workspace file", meh.Details{"filename": filename})
-			}
-			return nil
-		},
-	}
 }
 
 func (action *imageRunner) newStdinInputRequest(input lweeflowfile.ActionInputStdin) inputIngestionRequestWithIngestor {
@@ -198,6 +168,36 @@ func (action *imageRunner) newStreamInputRequest(input lweeflowfile.ActionInputS
 	}, nil
 }
 
+func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.ActionInputWorkspaceFile) inputIngestionRequestWithIngestor {
+	return inputIngestionRequestWithIngestor{
+		request: InputIngestionRequest{
+			RequireFinishUntilPhase: PhasePreStart,
+			SourceName:              input.Source,
+		},
+		ingest: func(ctx context.Context, source io.Reader) error {
+			filename := path.Join(action.workspaceHostDir, input.Filename)
+			err := os.MkdirAll(path.Dir(filename), 0750)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
+			}
+			f, err := os.Create(filename)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "create workspace file", meh.Details{"filename": filename})
+			}
+			defer func() { _ = f.Close() }()
+			_, err = io.Copy(f, source)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "write workspace file", meh.Details{"filename": filename})
+			}
+			err = f.Close()
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "close written workspace file", meh.Details{"filename": filename})
+			}
+			return nil
+		},
+	}
+}
+
 func (action *imageRunner) waitForContainerState(ctx context.Context, state containerState) error {
 	action.containerRunningCond.L.Lock()
 	for {
@@ -213,43 +213,6 @@ func (action *imageRunner) waitForContainerState(ctx context.Context, state cont
 	}
 	action.containerRunningCond.L.Unlock()
 	return nil
-}
-
-func (action *imageRunner) newContainerWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputContainerWorkspaceFile) OutputOfferWithOutputter {
-	return OutputOfferWithOutputter{
-		offer: OutputOffer{
-			RequireFinishUntilPhase: PhaseStopped,
-		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
-			defer func() { _ = writer.Close() }()
-			// Wait for container stopped.
-			err := action.waitForContainerState(ctx, containerStateDone)
-			if err != nil {
-				return meh.Wrap(err, "wait for container done", nil)
-			}
-			filename := path.Join(action.containerWorkspaceHostDir, output.Filename)
-			action.logger.Debug("container done. now providing container workspace file output.",
-				zap.String("filename", filename))
-			select {
-			case <-ctx.Done():
-				return meh.NewInternalErrFromErr(ctx.Err(), "notify output ready", nil)
-			case ready <- struct{}{}:
-			}
-			// Copy file.
-			f, err := os.Open(filename)
-			if err != nil {
-				return meh.NewBadInputErrFromErr(err, "open container-workspace output file",
-					meh.Details{"filename": filename})
-			}
-			defer func() { _ = f.Close() }()
-			_, err = io.Copy(writer, f)
-			if err != nil {
-				return meh.NewInternalErrFromErr(err, "copy container-workspace output file",
-					meh.Details{"filename": filename})
-			}
-			return nil
-		},
-	}
 }
 
 func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
@@ -308,6 +271,43 @@ func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutput
 	}, nil
 }
 
+func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) OutputOfferWithOutputter {
+	return OutputOfferWithOutputter{
+		offer: OutputOffer{
+			RequireFinishUntilPhase: PhaseStopped,
+		},
+		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+			defer func() { _ = writer.Close() }()
+			// Wait for container stopped.
+			err := action.waitForContainerState(ctx, containerStateDone)
+			if err != nil {
+				return meh.Wrap(err, "wait for container done", nil)
+			}
+			filename := path.Join(action.workspaceHostDir, output.Filename)
+			action.logger.Debug("container done. now providing workspace file output.",
+				zap.String("filename", filename))
+			select {
+			case <-ctx.Done():
+				return meh.NewInternalErrFromErr(ctx.Err(), "notify output ready", nil)
+			case ready <- struct{}{}:
+			}
+			// Copy file.
+			f, err := os.Open(filename)
+			if err != nil {
+				return meh.NewBadInputErrFromErr(err, "open workspace output file",
+					meh.Details{"filename": filename})
+			}
+			defer func() { _ = f.Close() }()
+			_, err = io.Copy(writer, f)
+			if err != nil {
+				return meh.NewInternalErrFromErr(err, "copy workspace output file",
+					meh.Details{"filename": filename})
+			}
+			return nil
+		},
+	}
+}
+
 func (action *imageRunner) setContainerState(newState containerState) {
 	action.containerRunningCond.L.Lock()
 	action.containerState = newState
@@ -322,8 +322,8 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 		ExposedPorts: nil,
 		VolumeMounts: []container.VolumeMount{
 			{
-				Source: action.containerWorkspaceHostDir,
-				Target: action.containerWorkspaceMountDir,
+				Source: action.workspaceHostDir,
+				Target: action.workspaceMountDir,
 			},
 		},
 		Command: action.command,

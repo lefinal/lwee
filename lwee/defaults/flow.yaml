@@ -16,7 +16,7 @@ actions:
   #    in:
   #      myActionInputName:
   #        source: flow.in.myFlowInputName
-  #        provideAs: container-workspace-file
+  #        provideAs: workspace-file
   #        filename: in/in.csv
   #    run:
   #      type: proj-action

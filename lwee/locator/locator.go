@@ -121,6 +121,10 @@ func (locator *Locator) ActionTempDir() string {
 	return locator.actionTempDir
 }
 
+func (locator *Locator) ActionWorkspaceDirByAction(actionName string) string {
+	return path.Join(locator.ActionTempDirByAction(actionName), "workspace")
+}
+
 func (locator *Locator) ContainerWorkspaceMountDir() string {
 	return "/lwee"
 }
