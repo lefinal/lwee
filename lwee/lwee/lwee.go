@@ -70,6 +70,12 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 		lwee.actions = append(lwee.actions, newAction)
 	}
 	lwee.logger.Info(fmt.Sprintf("loaded %d action(s)", len(lwee.actions)))
+	// Verify all actions.
+	lwee.logger.Info("verify actions")
+	err = lwee.verifyActions(ctx)
+	if err != nil {
+		return meh.Wrap(err, "verify actions", nil)
+	}
 	// Build all actions.
 	lwee.logger.Info("build actions")
 	err = lwee.buildActions(ctx)
@@ -145,6 +151,22 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	}
 	lwee.logger.Info("done", zap.Duration("took", time.Since(start)))
 	return nil
+}
+
+// verifyActions verifies all actions.
+func (lwee *LWEE) verifyActions(ctx context.Context) error {
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, actionToVerify := range lwee.actions {
+		actionToVerify := actionToVerify
+		eg.Go(func() error {
+			err := actionToVerify.Verify(ctx)
+			if err != nil {
+				return meh.Wrap(err, fmt.Sprintf("verify action %q", actionToVerify.Name()), nil)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 // buildActions builds all actions.

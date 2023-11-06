@@ -1,0 +1,12 @@
+# Set the flow name according to the task it accomplishes.
+name: E2E command assert with no assertions OK
+description: Flow for checking if no assertions is handled correctly.
+
+actions:
+  myAction:
+    description: "Has no assertions."
+    run:
+      type: command
+      command:
+        - "/bin/bash"
+        - "--version"

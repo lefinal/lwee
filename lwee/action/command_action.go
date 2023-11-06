@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"github.com/lefinal/lwee/lwee/commandassert"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/lwee/lwee/templaterender"
@@ -32,7 +33,7 @@ type commandActionExtraRenderData struct {
 
 type commandAction struct {
 	*Base
-	command      string
+	assertions   map[string]commandassert.Assertion
 	command      []string
 	workspaceDir string
 	// stdinReader is not nil when an input ingestion request for stdin was made.
@@ -69,6 +70,7 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 	// Build the actual action.
 	commandAction := &commandAction{
 		Base:             base,
+		assertions:       make(map[string]commandassert.Assertion),
 		command:          commandActionDetails.Command,
 		workspaceDir:     workspaceDir,
 		commandState:     commandStateReady,
@@ -79,7 +81,33 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 		return nil, meh.NewInternalErrFromErr(err, "create workspace dir",
 			meh.Details{"dir": commandAction.workspaceDir})
 	}
+	// Create assertions.
+	for assertionName, assertionOptions := range commandActionDetails.Assertions {
+		assertion, err := commandassert.New(commandassert.Options{
+			Logger: base.logger.Named("assertion").Named(logging.WrapName(assertionName)),
+			Run:    assertionOptions.Run,
+			Should: commandassert.ShouldType(assertionOptions.Should),
+			Target: assertionOptions.Target,
+		})
+		if err != nil {
+			return nil, meh.Wrap(err, "build assertion", meh.Details{
+				"assertion_name":    assertionName,
+				"assertion_options": assertionOptions,
+			})
+		}
+		commandAction.assertions[assertionName] = assertion
+	}
 	return commandAction, nil
+}
+
+func (action *commandAction) Verify(ctx context.Context) error {
+	for assertionName, assertion := range action.assertions {
+		err := assertion.Assert(ctx)
+		if err != nil {
+			return meh.Wrap(err, fmt.Sprintf("assert %q", assertionName), nil)
+		}
+	}
+	return nil
 }
 
 // Build assures that the command exists.

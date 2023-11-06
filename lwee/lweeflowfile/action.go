@@ -137,8 +137,18 @@ type ActionRunnerBase struct {
 
 type ActionRunnerCommand struct {
 	ActionRunnerBase
-	// TODO: Add assert-stuff.
 	Command    []string                                `json:"command"`
+	Assertions map[string]ActionRunnerCommandAssertion `json:"assert"`
+}
+
+type ActionRunnerCommandAssertion struct {
+	// Run is the command to run that returns the assertion value that will be
+	// checked using the method described in Should.
+	Run []string `json:"run"`
+	// Should is the comparison-method to use.
+	Should string `json:"should"`
+	// Target is used for equality comparison.
+	Target string `json:"target"`
 }
 
 func (runner ActionRunnerCommand) Type() string {

@@ -7,7 +7,9 @@ import (
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/meh/mehlog"
 	"github.com/lefinal/zaprec"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"os"
 	"testing"
 )
 
@@ -18,6 +20,12 @@ type config struct {
 }
 
 func run(t *testing.T, config config) error {
+	// Assert that the context dir and flow file exist.
+	_, err := os.Stat(config.contextDir)
+	require.NoError(t, err, "stat context dir should not fail")
+	_, err = os.Stat(config.flowFilename)
+	require.NoError(t, err, "stat flow file should not fail")
+
 	logger, records := zaprec.NewRecorder(zap.DebugLevel)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -26,7 +34,7 @@ func run(t *testing.T, config config) error {
 		}
 	})
 
-	err := app.Run(context.Background(), logger, app.Config{
+	err = app.Run(context.Background(), logger, app.Config{
 		EngineType:         container.EngineTypeDocker,
 		Command:            config.command,
 		ContextDir:         config.contextDir,
@@ -34,7 +42,7 @@ func run(t *testing.T, config config) error {
 		KeepTemporaryFiles: false,
 	})
 	if err != nil {
-		mehlog.Log(logger, err)
+		mehlog.LogToLevel(logger, zap.ErrorLevel, err)
 	}
 	return err
 }

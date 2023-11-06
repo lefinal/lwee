@@ -27,6 +27,7 @@ const (
 
 type Action interface {
 	Name() string
+	Verify(ctx context.Context) error
 	Build(ctx context.Context) error
 	InputIngestionRequests() []InputIngestionRequest
 	OutputOffers() []OutputOffer

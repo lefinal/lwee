@@ -1,0 +1,19 @@
+# Set the flow name according to the task it accomplishes.
+name: E2E command assert with should equal NOT OK
+description: Flow for checking version assertions.
+
+actions:
+  myAction:
+    description: "Should equal."
+    run:
+      type: command
+      command:
+        - "/bin/bash"
+        - "--version"
+      assert:
+        versionMatches:
+          run:
+            - "/bin/bash"
+            - "--version"
+          should: equal
+          target: "2.3.4 (my output format is different from bash version output)"

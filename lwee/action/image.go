@@ -49,6 +49,10 @@ type imageRunner struct {
 	streamConnector      lweestream.Connector
 }
 
+func (action *imageRunner) Verify(_ context.Context) error {
+	return nil
+}
+
 func (action *imageRunner) registerInputIngestionRequests() error {
 	stdinInputRegistered := false
 	for inputName, input := range action.fileActionInputs {

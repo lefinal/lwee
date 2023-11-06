@@ -1,0 +1,25 @@
+# Set the flow name according to the task it accomplishes.
+name: E2E command assert with should match regex NOT OK
+description: Flow for checking version assertions.
+
+actions:
+  myAction:
+    description: "Should match regex."
+    run:
+      type: command
+      command:
+        - "/bin/bash"
+        - "--version"
+      assert:
+        versionMatches:
+          run:
+            - "echo"
+            - "Hello World!"
+          should: match-regex
+          target: "Bye World[1,2,!]"
+        versionMatchesButOutputHasNewLine:
+          run:
+            - "echo"
+            - "4.5.6\n"
+          should: match-regex
+          target: "^8.*.*$"
