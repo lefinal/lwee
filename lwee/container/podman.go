@@ -17,6 +17,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.uber.org/zap"
 	"io"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,6 +38,23 @@ func NewPodmanEngine(connLifetime context.Context, logger *zap.Logger) (Engine, 
 		logger:     logger,
 		podmanConn: podmanConn,
 	}), nil
+}
+
+func (client *podmanEngineClient) imageExists(_ context.Context, imageTag string) (bool, error) {
+	if strings.HasSuffix(":latest", imageTag) {
+		return true, nil
+	}
+
+	filters := map[string][]string{
+		"reference": {imageTag},
+	}
+	foundImages, err := images.List(client.podmanConn, &images.ListOptions{
+		Filters: filters,
+	})
+	if err != nil {
+		return false, meh.NewInternalErrFromErr(err, "image list", meh.Details{"filters": filters})
+	}
+	return len(foundImages) > 0, nil
 }
 
 func (client *podmanEngineClient) imagePull(_ context.Context, imageTag string) error {
@@ -122,9 +140,7 @@ func (client *podmanEngineClient) createContainer(_ context.Context, containerCo
 	}
 	containerSpec.Command = containerConfig.Command
 	containerSpec.Stdin = true
-	// We need to set auto-remove to false in order to read stdout logs even if it
-	// finishes too fast. Otherwise, the logs would not be available.
-	containerSpec.Remove = false
+	containerSpec.Remove = containerConfig.AutoRemove
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		containerSpec.Mounts = append(containerSpec.Mounts, specs.Mount{
 			Destination: volumeMount.Target,
@@ -132,6 +148,7 @@ func (client *podmanEngineClient) createContainer(_ context.Context, containerCo
 			Source:      volumeMount.Source,
 		})
 	}
+	containerSpec.Env = containerConfig.Env
 	// Create the container.
 	client.logger.Debug("create container",
 		zap.String("image", containerConfig.Image),

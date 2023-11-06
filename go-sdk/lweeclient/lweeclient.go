@@ -33,6 +33,7 @@ type Client interface {
 	Lifetime() context.Context
 	RequestInputStream(streamName string) (InputReader, error)
 	ProvideOutputStream(streamName string) (OutputWriter, error)
+	Do(func(ctx context.Context) error)
 	Serve() error
 }
 
@@ -157,6 +158,7 @@ type client struct {
 	outputBufferSize          int
 	inputStreamsByStreamName  map[string]*inputStream
 	outputStreamsByStreamName map[string]*outputStream
+	doFns                     sync.WaitGroup
 	m                         sync.Mutex
 }
 
@@ -262,6 +264,22 @@ func (c *client) ProvideOutputStream(streamName string) (OutputWriter, error) {
 	return stream, nil
 }
 
+func (c *client) Do(fn func(ctx context.Context) error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	c.doFns.Add(1)
+	go func() {
+		defer c.doFns.Done()
+		err := fn(c.lifetime)
+		c.m.Lock()
+		defer c.m.Unlock()
+		if err != nil {
+			c.cancel(err)
+			return
+		}
+	}()
+}
+
 func (c *client) Serve() error {
 	c.m.Lock()
 	listenAddr := c.listenAddr
@@ -285,6 +303,7 @@ func (c *client) Serve() error {
 	if err != nil {
 		return meh.Wrap(err, "serve", meh.Details{"listen_addr": listenAddr})
 	}
+	c.doFns.Wait()
 	return nil
 }
 

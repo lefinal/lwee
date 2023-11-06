@@ -60,6 +60,11 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	if err != nil {
 		return meh.Wrap(err, "new container engine", meh.Details{"engine_type": lwee.config.ContainerEngineType})
 	}
+	err = containerEngine.Start(ctx)
+	if err != nil {
+		return meh.Wrap(err, "start container engine", nil)
+	}
+	defer containerEngine.Stop()
 	// Create actions.
 	actionFactory := &action.Factory{
 		FlowName:        lwee.flowFile.Name,

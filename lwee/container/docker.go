@@ -8,6 +8,7 @@ import (
 	"fmt"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
@@ -18,6 +19,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,6 +41,20 @@ func NewDockerEngine(logger *zap.Logger) (Engine, error) {
 		logger:       logger,
 		dockerClient: dockerClient,
 	}), nil
+}
+
+func (client *dockerEngineClient) imageExists(ctx context.Context, imageTag string) (bool, error) {
+	if strings.HasSuffix(":latest", imageTag) {
+		return true, nil
+	}
+
+	filters := filters.NewArgs()
+	filters.Add("reference", imageTag)
+	foundImages, err := client.dockerClient.ImageList(ctx, dockertypes.ImageListOptions{Filters: filters})
+	if err != nil {
+		return false, meh.NewInternalErrFromErr(err, "image list", meh.Details{"filters": filters})
+	}
+	return len(foundImages) > 0, nil
 }
 
 func (client *dockerEngineClient) imagePull(ctx context.Context, imageTag string) error {
@@ -138,17 +154,20 @@ func (client *dockerEngineClient) imageBuild(ctx context.Context, buildOptions I
 
 func (client *dockerEngineClient) createContainer(ctx context.Context, containerConfig Config) (createdContainer, error) {
 	// Build container config.
+	envVars := make([]string, 0)
+	for k, v := range containerConfig.Env {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	}
 	dockerContainerConfig := &dockercontainer.Config{
 		ExposedPorts: containerConfig.ExposedPorts,
 		Cmd:          containerConfig.Command,
 		Image:        containerConfig.Image,
 		StdinOnce:    true,
 		OpenStdin:    true,
+		Env:          envVars,
 	}
 	dockerContainerHostConfig := &dockercontainer.HostConfig{
-		// We need to set auto-remove to false in order to read stdout logs even if it
-		// finishes too fast. Otherwise, the logs would not be available.
-		AutoRemove: false,
+		AutoRemove: containerConfig.AutoRemove,
 		Mounts:     make([]mount.Mount, 0),
 	}
 	for _, volumeMount := range containerConfig.VolumeMounts {

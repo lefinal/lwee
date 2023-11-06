@@ -33,6 +33,11 @@ type Config struct {
 	VolumeMounts []VolumeMount
 	Command      []string
 	Image        string
+	Env          map[string]string
+	// Whether to remove the container after it exited. Normally, we need to set this
+	// to false in order to read stdout logs even if it finishes too fast. Otherwise,
+	// the logs would not be available.
+	AutoRemove bool
 }
 
 type VolumeMount struct {
@@ -41,6 +46,8 @@ type VolumeMount struct {
 }
 
 type Engine interface {
+	Start(ctx context.Context) error
+	Stop()
 	ImagePull(ctx context.Context, imageTag string) error
 	ImageBuild(ctx context.Context, buildOptions ImageBuildOptions) error
 	CreateContainer(ctx context.Context, containerConfig Config) (string, error)
@@ -75,6 +82,7 @@ func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineTy
 }
 
 type engineClient interface {
+	imageExists(ctx context.Context, imageTag string) (bool, error)
 	imagePull(ctx context.Context, imageTag string) error
 	imageBuild(ctx context.Context, buildOptions ImageBuildOptions) error
 	createContainer(ctx context.Context, containerConfig Config) (createdContainer, error)
@@ -114,8 +122,9 @@ func (container createdContainer) mehDetails() meh.Details {
 // engine wraps a client for avoiding duplicate code for common logic. This
 // includes extended error details or avoiding duplicate image builds.
 type engine struct {
-	logger *zap.Logger
-	client engineClient
+	logger     *zap.Logger
+	client     engineClient
+	cleanUpper *cleanUpper
 	// buildsInProgressByTag holds a map of tags that have ongoing builds. If another
 	// build is triggered for the same tag, it will be delayed until the first one is
 	// done and then start building. The reason for this is that duplicate builds for
@@ -134,10 +143,23 @@ func newEngine(logger *zap.Logger, client engineClient) *engine {
 	return &engine{
 		logger:                    logger,
 		client:                    client,
+		cleanUpper:                newCleanUpper(logger.Named("cleanup"), client),
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),
 		createdContainersByID:     map[string]createdContainer{},
 	}
+}
+
+func (engine *engine) Start(ctx context.Context) error {
+	err := engine.cleanUpper.start(ctx)
+	if err != nil {
+		return meh.Wrap(err, "start clean-upper", nil)
+	}
+	return nil
+}
+
+func (engine *engine) Stop() {
+	engine.cleanUpper.stop()
 }
 
 func (engine *engine) createdContainerByID(containerID string) createdContainer {
@@ -157,6 +179,13 @@ func (engine *engine) createdContainerByID(containerID string) createdContainer 
 }
 
 func (engine *engine) ImagePull(ctx context.Context, imageTag string) error {
+	imageExists, err := engine.client.imageExists(ctx, imageTag)
+	if err != nil {
+		return meh.Wrap(err, "check if image exists", meh.Details{"image_tag": imageTag})
+	}
+	if imageExists {
+		return nil
+	}
 	engine.logger.Debug("pull image", zap.String("image_tag", imageTag))
 	return engine.client.imagePull(ctx, imageTag)
 }
@@ -193,6 +222,7 @@ func (engine *engine) CreateContainer(ctx context.Context, containerConfig Confi
 		return "", meh.Wrap(err, "create container with client", nil)
 	}
 	createdContainer.logger.Debug("container created")
+	engine.cleanUpper.registerContainer(createdContainer.name)
 	engine.createdContainersByIDMutex.Lock()
 	engine.createdContainersByID[createdContainer.id] = createdContainer
 	engine.createdContainersByIDMutex.Unlock()
