@@ -33,7 +33,7 @@ type commandActionExtraRenderData struct {
 type commandAction struct {
 	*Base
 	command      string
-	args         []string
+	command      []string
 	workspaceDir string
 	// stdinReader is not nil when an input ingestion request for stdin was made.
 	// Input data will be available via this reader.
@@ -63,11 +63,13 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 	if err != nil {
 		return nil, meh.Wrap(err, "render command action details", nil)
 	}
+	if len(commandActionDetails.Command) == 0 || commandActionDetails.Command[0] == "" {
+		return nil, meh.NewBadInputErr("missing command", nil)
+	}
 	// Build the actual action.
 	commandAction := &commandAction{
 		Base:             base,
 		command:          commandActionDetails.Command,
-		args:             commandActionDetails.Args,
 		workspaceDir:     workspaceDir,
 		commandState:     commandStateReady,
 		commandStateCond: sync.NewCond(&sync.Mutex{}),
@@ -82,12 +84,12 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 
 // Build assures that the command exists.
 func (action *commandAction) Build(_ context.Context) error {
-	filename, err := exec.LookPath(action.command)
+	filename, err := exec.LookPath(action.command[0])
 	if err != nil {
 		return meh.NewBadInputErrFromErr(err, "look up command", meh.Details{"command": action.command})
 	}
 	action.logger.Debug("command lookup succeeded",
-		zap.String("command", action.command),
+		zap.String("command", action.command[0]),
 		zap.String("command_filename", filename))
 	return nil
 }
@@ -296,7 +298,7 @@ func (action *commandAction) Start(startCtx context.Context) (<-chan error, erro
 	action.cancelCmd = cancel
 	eg, ctx := errgroup.WithContext(ctx)
 	// Prepare command.
-	action.cmd = exec.CommandContext(ctx, action.command, action.args...)
+	action.cmd = exec.CommandContext(ctx, action.command[0], action.command[1:]...)
 	action.cmd.Dir = action.workspaceDir
 	if action.stdinReader != nil {
 		action.cmd.Stdin = action.stdinReader

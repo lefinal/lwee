@@ -137,9 +137,8 @@ type ActionRunnerBase struct {
 
 type ActionRunnerCommand struct {
 	ActionRunnerBase
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
 	// TODO: Add assert-stuff.
+	Command    []string                                `json:"command"`
 }
 
 func (runner ActionRunnerCommand) Type() string {
@@ -147,13 +146,9 @@ func (runner ActionRunnerCommand) Type() string {
 }
 
 func (runner ActionRunnerCommand) Render(renderer *templaterender.Renderer) error {
-	err := renderer.RenderString(&runner.Command)
+	err := renderer.RenderStrings(runner.Command)
 	if err != nil {
 		return meh.Wrap(err, "render command", nil)
-	}
-	err = renderer.RenderStrings(runner.Args)
-	if err != nil {
-		return meh.Wrap(err, "render args", nil)
 	}
 	return nil
 }
