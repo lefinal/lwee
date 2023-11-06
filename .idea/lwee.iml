@@ -2,7 +2,11 @@
 <module type="WEB_MODULE" version="4">
   <component name="Go" enabled="true" />
   <component name="NewModuleRootManager">
-    <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$">
+      <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/action-io/project-data-integrity/out" />
+      <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/command-assert/project/out" />
+      <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/cycle-detection/project/out" />
+    </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>

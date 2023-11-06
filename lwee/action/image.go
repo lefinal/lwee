@@ -320,6 +320,10 @@ func (action *imageRunner) setContainerState(newState containerState) {
 	action.containerRunningCond.Broadcast()
 }
 
+func (action *imageRunner) RunInfo(_ context.Context) (map[string]string, error) {
+	return nil, nil
+}
+
 func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 	var err error
 	// Create and start the container.

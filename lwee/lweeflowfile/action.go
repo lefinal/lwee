@@ -139,6 +139,7 @@ type ActionRunnerCommand struct {
 	ActionRunnerBase
 	Command    []string                                `json:"command"`
 	Assertions map[string]ActionRunnerCommandAssertion `json:"assert"`
+	RunInfo    map[string]ActionRunnerCommandRunInfo   `json:"log"`
 }
 
 type ActionRunnerCommandAssertion struct {
@@ -149,6 +150,12 @@ type ActionRunnerCommandAssertion struct {
 	Should string `json:"should"`
 	// Target is used for equality comparison.
 	Target string `json:"target"`
+}
+
+type ActionRunnerCommandRunInfo struct {
+	// Run is the command to run. The stdout and stderr result will be logged for the
+	// run.
+	Run []string `json:"run"`
 }
 
 func (runner ActionRunnerCommand) Type() string {

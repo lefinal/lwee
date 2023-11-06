@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lefinal/lwee/lwee/logging"
+	"github.com/lefinal/lwee/lwee/runinfo"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -59,11 +60,12 @@ type Ingestor func(ctx context.Context, source io.Reader) error
 type Outputter func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error
 
 type sourceForwarder struct {
-	logger      *zap.Logger
-	copyOptions CopyOptions
-	sourceName  string
-	writer      sourceWriter
-	readers     []sourceReader
+	logger          *zap.Logger
+	copyOptions     CopyOptions
+	sourceName      string
+	writer          sourceWriter
+	readers         []sourceReader
+	runInfoRecorder *runinfo.Recorder
 }
 
 func (forwarder *sourceForwarder) forward(ctx context.Context) error {
@@ -73,14 +75,19 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 			_ = reader.writer.Close()
 		}
 	}()
+	writeInfo := runinfo.IOWriteInfo{
+		Requesters: forwarder.requesterNames(),
+	}
 	// Wait for the writer being ready.
 	start := time.Now()
+	writeInfo.WaitForOpenStart = start
 	forwarder.logger.Debug("wait for source writer ready")
 	select {
 	case <-ctx.Done():
 		return meh.NewInternalErrFromErr(ctx.Err(), "wait for source writer ready", nil)
 	case <-forwarder.writer.open:
 	}
+	writeInfo.WaitForOpenEnd = time.Now()
 	forwarder.logger.Debug(fmt.Sprintf("source writer has opened. forwarding to %d reader(s)", len(forwarder.readers)),
 		zap.Time("source_writer_ready_at", time.Now()),
 		zap.Duration("source_writer_ready_after", time.Since(start)))
@@ -105,6 +112,7 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	}
 	copyDone := make(chan error)
 	start = time.Now()
+	writeInfo.WriteStart = start
 	var stats ioCopyStats
 	go func() {
 		forwarder.logger.Debug("copy data", zap.Int("source_readers", len(forwarder.readers)))
@@ -134,6 +142,17 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 			writeTimesWithRequester[forwarder.readers[i].requesterName] = stats.writeTimes[i].String()
 		}
 	}
+	writeInfo.WriteEnd = time.Now()
+	writeInfo.WrittenBytes = int64(stats.written)
+	writeInfo.CopyBufferSizeBytes = int64(stats.copyOptions.CopyBufferSize)
+	writeInfo.MinWriteTime = runinfo.Duration(stats.minWriteTime)
+	writeInfo.MaxWriteTime = runinfo.Duration(stats.maxWriteTime)
+	writeInfo.AvgWriteTime = runinfo.Duration(stats.avgWriteTime)
+	writeInfo.TotalWaitForNextP = runinfo.Duration(stats.totalWaitForNextP)
+	writeInfo.TotalDistributeP = runinfo.Duration(stats.totalDistributeP)
+	writeInfo.TotalWaitForWritesAfterDistribute = runinfo.Duration(stats.totalWaitForWritesAfterDistribute)
+	writeInfo.WriteTimes = writeTimesWithRequester
+	forwarder.runInfoRecorder.RecordIOWriteInfo(forwarder.sourceName, writeInfo)
 	forwarder.logger.Debug("source data copied",
 		zap.Duration("took", time.Since(start)),
 		zap.String("bytes_copied", logging.FormatByteCountDecimal(int64(stats.written))),
@@ -176,28 +195,31 @@ func notifyReadersOfOpenSource(ctx context.Context, readers []sourceReader) erro
 	return eg.Wait()
 }
 
-func NewSupplier(logger *zap.Logger, copyOptions CopyOptions) Supplier {
-	return &supplier{
-		logger:      logger,
-		copyOptions: copyOptions,
-	}
-}
-
 // supplier is the implementation of Supplier.
 type supplier struct {
-	logger      *zap.Logger
-	copyOptions CopyOptions
-	forwarders  []*sourceForwarder
-	m           sync.Mutex
+	logger          *zap.Logger
+	copyOptions     CopyOptions
+	forwarders      []*sourceForwarder
+	runInfoRecorder *runinfo.Recorder
+	m               sync.Mutex
+}
+
+func NewSupplier(logger *zap.Logger, copyOptions CopyOptions, runInfoRecorder *runinfo.Recorder) Supplier {
+	return &supplier{
+		logger:          logger,
+		copyOptions:     copyOptions,
+		runInfoRecorder: runInfoRecorder,
+	}
 }
 
 func (supplier *supplier) newForwarder(sourceName string) *sourceForwarder {
 	return &sourceForwarder{
-		logger:      supplier.logger.Named("source").Named(logging.WrapName(sourceName)),
-		copyOptions: supplier.copyOptions,
-		sourceName:  sourceName,
-		writer:      sourceWriter{},
-		readers:     make([]sourceReader, 0),
+		logger:          supplier.logger.Named("source").Named(logging.WrapName(sourceName)),
+		copyOptions:     supplier.copyOptions,
+		sourceName:      sourceName,
+		writer:          sourceWriter{},
+		readers:         make([]sourceReader, 0),
+		runInfoRecorder: supplier.runInfoRecorder,
 	}
 }
 

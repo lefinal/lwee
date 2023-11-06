@@ -7,6 +7,7 @@ import (
 	"github.com/lefinal/lwee/lwee/action"
 	"github.com/lefinal/lwee/lwee/actionio"
 	"github.com/lefinal/lwee/lwee/logging"
+	"github.com/lefinal/lwee/lwee/runinfo"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -67,6 +68,7 @@ type Scheduler struct {
 	ctx              context.Context
 	cancel           context.CancelCauseFunc
 	logger           *zap.Logger
+	runInfoRecorder  *runinfo.Recorder
 	scheduledActions []*scheduledAction
 	remainingActions int
 	m                sync.Mutex
@@ -115,7 +117,7 @@ func scheduledActionFromAction(logger *zap.Logger, actionToSchedule action.Actio
 }
 
 // New creates a new Scheduler and registers IO for the given action.Action list.
-func New(runCtx context.Context, logger *zap.Logger, ioSupplier actionio.Supplier, actions []action.Action) (*Scheduler, error) {
+func New(runCtx context.Context, logger *zap.Logger, ioSupplier actionio.Supplier, actions []action.Action, runInfoRecorder *runinfo.Recorder) (*Scheduler, error) {
 	ctx, cancel := context.WithCancelCause(runCtx)
 	scheduler := &Scheduler{
 		logger:           logger,
@@ -123,6 +125,7 @@ func New(runCtx context.Context, logger *zap.Logger, ioSupplier actionio.Supplie
 		cancel:           cancel,
 		scheduledActions: make([]*scheduledAction, 0),
 		remainingActions: len(actions),
+		runInfoRecorder:  runInfoRecorder,
 	}
 	for _, actionToSchedule := range actions {
 		scheduledAction, err := scheduledActionFromAction(logger, actionToSchedule, ioSupplier)
@@ -235,12 +238,14 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 						remainingActionNames = append(remainingActionNames, scheduledAction.action.Name())
 					}
 				}
+				scheduler.runInfoRecorder.RecordActionEnd(scheduledAction.action.Name(), time.Now())
 				scheduler.logger.Info(fmt.Sprintf("finished action %d/%d",
 					len(scheduler.scheduledActions)-scheduler.remainingActions, len(scheduler.scheduledActions)),
 					zap.String("action_name", scheduledAction.action.Name()),
 					zap.Duration("action_took", time.Since(scheduledAction.start)))
 			}()
 			scheduledAction.start = time.Now()
+			scheduler.runInfoRecorder.RecordActionStart(scheduledAction.action.Name(), scheduledAction.start)
 			done, err := scheduledAction.action.Start(scheduler.ctx)
 			if err != nil {
 				scheduler.cancel(meh.Wrap(err, fmt.Sprintf("start action %q", scheduledAction.action.Name()), nil))

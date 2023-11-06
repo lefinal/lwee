@@ -6,6 +6,7 @@ import (
 	"github.com/lefinal/lwee/lwee/commandassert"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
+	"github.com/lefinal/lwee/lwee/runinfo"
 	"github.com/lefinal/lwee/lwee/templaterender"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
@@ -33,9 +34,10 @@ type commandActionExtraRenderData struct {
 
 type commandAction struct {
 	*Base
-	assertions   map[string]commandassert.Assertion
-	command      []string
-	workspaceDir string
+	assertions       map[string]commandassert.Assertion
+	runInfoProviders map[string]runinfo.Provider
+	command          []string
+	workspaceDir     string
 	// stdinReader is not nil when an input ingestion request for stdin was made.
 	// Input data will be available via this reader.
 	stdinReader io.Reader
@@ -71,6 +73,7 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 	commandAction := &commandAction{
 		Base:             base,
 		assertions:       make(map[string]commandassert.Assertion),
+		runInfoProviders: make(map[string]runinfo.Provider),
 		command:          commandActionDetails.Command,
 		workspaceDir:     workspaceDir,
 		commandState:     commandStateReady,
@@ -96,6 +99,14 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 			})
 		}
 		commandAction.assertions[assertionName] = assertion
+	}
+	// Create run info providers.
+	for infoName, infoDetails := range commandActionDetails.RunInfo {
+		provider, err := runinfo.NewProvider(infoDetails)
+		if err != nil {
+			return nil, meh.Wrap(err, fmt.Sprintf("new run info provider for %q", infoName), meh.Details{"info_details": infoDetails})
+		}
+		commandAction.runInfoProviders[infoName] = provider
 	}
 	return commandAction, nil
 }
@@ -316,6 +327,14 @@ func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.Act
 			return nil
 		},
 	}
+}
+
+func (action *commandAction) RunInfo(ctx context.Context) (map[string]string, error) {
+	runInfo, err := runinfo.EvalAll(ctx, action.runInfoProviders)
+	if err != nil {
+		return nil, meh.Wrap(err, "eval all run info providers", nil)
+	}
+	return runInfo, nil
 }
 
 // Start creates the actual exec.Command and starts it. The returned chanel

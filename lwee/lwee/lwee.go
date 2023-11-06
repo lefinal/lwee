@@ -9,12 +9,14 @@ import (
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
+	"github.com/lefinal/lwee/lwee/runinfo"
 	scheduler "github.com/lefinal/lwee/lwee/scheduler"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
+	"path"
 	"sync"
 	"time"
 )
@@ -26,29 +28,33 @@ type Config struct {
 }
 
 type LWEE struct {
-	logger     *zap.Logger
-	config     Config
-	actions    []action.Action
-	flowFile   lweeflowfile.Flow
-	Locator    *locator.Locator
-	ioSupplier actionio.Supplier
+	logger          *zap.Logger
+	config          Config
+	actions         []action.Action
+	flowFile        lweeflowfile.Flow
+	Locator         *locator.Locator
+	ioSupplier      actionio.Supplier
+	runInfoRecorder *runinfo.Recorder
 }
 
 type flowOutput func(ctx context.Context) error
 
 func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locator, config Config) (*LWEE, error) {
+	runInfoRecorder := runinfo.NewCollector(logger.Named("run-info"))
 	lwee := &LWEE{
-		logger:     logger,
-		config:     config,
-		Locator:    locator,
-		actions:    make([]action.Action, 0),
-		flowFile:   flowFile,
-		ioSupplier: actionio.NewSupplier(logger.Named("io"), actionio.CopyOptions{}),
+		logger:          logger,
+		config:          config,
+		Locator:         locator,
+		actions:         make([]action.Action, 0),
+		flowFile:        flowFile,
+		ioSupplier:      actionio.NewSupplier(logger.Named("io"), actionio.CopyOptions{}, runInfoRecorder),
+		runInfoRecorder: runInfoRecorder,
 	}
 	return lwee, nil
 }
 
 func (lwee *LWEE) Run(ctx context.Context) error {
+	lwee.runInfoRecorder.RecordFlowName(lwee.flowFile.Name)
 	// Setup container engine.
 	containerEngine, err := container.NewEngine(ctx, lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType)
 	if err != nil {
@@ -100,7 +106,7 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 		flowOutputs = append(flowOutputs, registeredFlowOutput)
 	}
 	// Prepare scheduler and register IO.
-	actionScheduler, err := scheduler.New(ctx, lwee.logger.Named("scheduler"), lwee.ioSupplier, lwee.actions)
+	actionScheduler, err := scheduler.New(ctx, lwee.logger.Named("scheduler"), lwee.ioSupplier, lwee.actions, lwee.runInfoRecorder)
 	if err != nil {
 		return meh.Wrap(err, "setup actions with scheduler", nil)
 	}
@@ -121,8 +127,14 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 			_ = os.RemoveAll(lwee.Locator.ActionTempDir())
 		}
 	}()
+	// Log run info.
+	err = lwee.logActionRunInfo(ctx)
+	if err != nil {
+		return meh.Wrap(err, "log action run info", nil)
+	}
 	// Run.
 	start := time.Now()
+	lwee.runInfoRecorder.RecordFlowStart(start)
 	lwee.logger.Info("run actions")
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -149,7 +161,13 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	if err != nil {
 		return meh.Wrap(err, "run actions", nil)
 	}
+	lwee.runInfoRecorder.RecordFlowEnd(time.Now())
 	lwee.logger.Info("done", zap.Duration("took", time.Since(start)))
+	// Write run info results.
+	err = lwee.writeRunInfoResult()
+	if err != nil {
+		return meh.Wrap(err, "write run info result", nil)
+	}
 	return nil
 }
 
@@ -192,6 +210,41 @@ func (lwee *LWEE) buildActions(ctx context.Context) error {
 		})
 	}
 	return eg.Wait()
+}
+
+// logActionRunInfo evaluates run information for all action and saves it to an
+// output file for improved reproducibility.
+func (lwee *LWEE) logActionRunInfo(ctx context.Context) error {
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, actionToHandle := range lwee.actions {
+		actionToHandle := actionToHandle
+		eg.Go(func() error {
+			runInfo, err := actionToHandle.RunInfo(ctx)
+			if err != nil {
+				return meh.Wrap(err, fmt.Sprintf("run log info for action %q", actionToHandle.Name()), nil)
+			}
+			lwee.runInfoRecorder.RecordActionInfo(actionToHandle.Name(), runInfo)
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func (lwee *LWEE) writeRunInfoResult() error {
+	runInfoResult, err := lwee.runInfoRecorder.Result()
+	if err != nil {
+		return meh.Wrap(err, "get run info result", nil)
+	}
+	filename := lwee.Locator.RunInfoYAMLFilename()
+	err = locator.CreateDirIfNotExists(path.Dir(filename))
+	if err != nil {
+		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": path.Dir(filename)})
+	}
+	err = os.WriteFile(filename, runInfoResult, 0600)
+	if err != nil {
+		return meh.Wrap(err, "write run info result", meh.Details{"filename": filename})
+	}
+	return nil
 }
 
 // getFreePort asks the kernel for a free open port that is ready to use.

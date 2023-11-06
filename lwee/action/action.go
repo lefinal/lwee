@@ -33,6 +33,7 @@ type Action interface {
 	OutputOffers() []OutputOffer
 	IngestInput(ctx context.Context, inputName string, data io.ReadCloser) error
 	ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceWriter) error
+	RunInfo(ctx context.Context) (map[string]string, error)
 	Start(ctx context.Context) (<-chan error, error)
 	Stop(ctx context.Context) error
 }

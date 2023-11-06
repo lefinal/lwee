@@ -90,6 +90,23 @@ func (locator *Locator) InitProject(logger *zap.Logger) error {
 	return nil
 }
 
+func CreateDirIfNotExists(dir string) error {
+	info, err := os.Stat(dir)
+	if err == nil {
+		// Already exists.
+		if !info.IsDir() {
+			return meh.NewInternalErr("directory is a file", nil)
+		}
+		return nil
+	}
+	// Create.
+	err = os.MkdirAll(dir, mkdirPerm)
+	if err != nil {
+		return meh.NewBadInputErrFromErr(err, "mkdir all", nil)
+	}
+	return nil
+}
+
 func CreateIfNotExists(filename string, content []byte) error {
 	_, err := os.Stat(filename)
 	if err == nil {
@@ -127,6 +144,10 @@ func (locator *Locator) ActionWorkspaceDirByAction(actionName string) string {
 
 func (locator *Locator) ContainerWorkspaceMountDir() string {
 	return "/lwee"
+}
+
+func (locator *Locator) RunInfoYAMLFilename() string {
+	return path.Join(locator.contextDir, "out", "run-info.yaml")
 }
 
 func gitKeepDir(dir string) error {
