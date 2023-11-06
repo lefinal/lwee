@@ -126,7 +126,10 @@ func provideFileSource(ctx context.Context, filename string, sourceProvider acti
 	}
 	_, err = io.Copy(sourceProvider.Writer, f)
 	if err != nil {
-		return meh.NewInternalErrFromErr(err, "stream file as source", meh.Details{"filename": filename})
+		return meh.NewInternalErrFromErr(err, "stream file as source", meh.Details{
+			"source_name": sourceProvider.Name,
+			"filename":    filename,
+		})
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package action
 import (
 	"context"
 	"fmt"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/locator"
@@ -243,9 +242,9 @@ func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
 			case ready <- struct{}{}:
 			}
 			// Forward.
-			_, err = stdcopy.StdCopy(writer, io.Discard, stdoutReader)
+			_, err = io.Copy(writer, stdoutReader)
 			if err != nil {
-				return meh.Wrap(err, "copy stdout logs", nil)
+				return meh.Wrap(err, "copy stdout to output writer", nil)
 			}
 			action.logger.Debug("read stdout logs done")
 			return nil

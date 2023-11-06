@@ -54,7 +54,7 @@ type Engine interface {
 	RemoveContainer(ctx context.Context, containerID string) error
 }
 
-func NewEngine(logger *zap.Logger, engineType EngineType) (Engine, error) {
+func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineType) (Engine, error) {
 	var engine Engine
 	var err error
 	switch engineType {
@@ -64,7 +64,10 @@ func NewEngine(logger *zap.Logger, engineType EngineType) (Engine, error) {
 			return nil, meh.Wrap(err, "new docker engine", nil)
 		}
 	case EngineTypePodman:
-		panic("implement me") // TODO
+		engine, err = NewPodmanEngine(lifetime, logger.Named("podman"))
+		if err != nil {
+			return nil, meh.Wrap(err, "new podman engine", nil)
+		}
 	default:
 		return nil, meh.NewBadInputErr(fmt.Sprintf("unsupported engine type: %v", engineType), nil)
 	}
@@ -274,13 +277,13 @@ func (engine *engine) ContainerStderrLogs(ctx context.Context, containerID strin
 }
 
 func (engine *engine) StopContainer(ctx context.Context, containerID string) error {
-	engine.logger.Debug("stop container")
 	container := engine.createdContainerByID(containerID)
+	container.logger.Debug("stop container")
 	err := engine.client.stopContainer(ctx, containerID)
 	if err != nil {
 		return meh.Wrap(err, "stop container with client", container.mehDetails())
 	}
-	engine.logger.Debug("container stopped")
+	container.logger.Debug("container stopped")
 	return nil
 }
 
@@ -295,11 +298,11 @@ func (engine *engine) WaitForContainerStopped(ctx context.Context, containerID s
 
 func (engine *engine) RemoveContainer(ctx context.Context, containerID string) error {
 	container := engine.createdContainerByID(containerID)
-	engine.logger.Debug("remove container")
+	container.logger.Debug("remove container")
 	err := engine.client.removeContainer(ctx, containerID)
 	if err != nil {
 		return meh.Wrap(err, "remove container with client", container.mehDetails())
 	}
-	engine.logger.Debug("container removed")
+	container.logger.Debug("container removed")
 	return nil
 }

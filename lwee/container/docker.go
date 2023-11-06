@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"regexp"
+	"sync"
 	"time"
 )
 
@@ -256,6 +257,61 @@ func (client *dockerEngineClient) containerStdin(ctx context.Context, containerI
 	return &containerStdinWriteCloser{hijackedResponse: response}, nil
 }
 
+// stdDecoder takes an io.ReadCloser that it reads std-encoded data from and
+// provides the encoded data via reader.
+type stdDecoder struct {
+	stdout bool
+	stderr bool
+	src    io.ReadCloser
+	writer io.WriteCloser
+	reader io.ReadCloser
+
+	copyErr      error
+	copyErrMutex sync.Mutex
+}
+
+func newStdDecoder(src io.ReadCloser, stdout bool, stderr bool) *stdDecoder {
+	decoder := &stdDecoder{
+		stdout: stdout,
+		stderr: stderr,
+		src:    src,
+	}
+	decoder.reader, decoder.writer = io.Pipe()
+	return decoder
+}
+
+func (decoder *stdDecoder) Read(p []byte) (int, error) {
+	decoder.copyErrMutex.Lock()
+	if decoder.copyErr != nil {
+		decoder.copyErrMutex.Unlock()
+		return 0, decoder.copyErr
+	}
+	decoder.copyErrMutex.Unlock()
+	return decoder.reader.Read(p)
+}
+
+func (decoder *stdDecoder) Close() error {
+	_ = decoder.src.Close()
+	_, _ = io.Copy(io.Discard, decoder.reader)
+	return nil
+}
+
+func (decoder *stdDecoder) copy() {
+	destOut := io.Discard
+	destErr := io.Discard
+	if decoder.stdout {
+		destOut = decoder.writer
+	}
+	if decoder.stderr {
+		destErr = decoder.writer
+	}
+	_, err := stdcopy.StdCopy(destOut, destErr, decoder.src)
+	decoder.copyErrMutex.Lock()
+	decoder.copyErr = err
+	decoder.copyErrMutex.Unlock()
+	_ = decoder.writer.Close()
+}
+
 func (client *dockerEngineClient) containerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
 	logs, err := client.dockerClient.ContainerLogs(ctx, containerID, dockertypes.ContainerLogsOptions{
 		Since:      time.Time{}.Format(time.RFC3339),
@@ -265,7 +321,9 @@ func (client *dockerEngineClient) containerStdoutLogs(ctx context.Context, conta
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "get container stdout logs", nil)
 	}
-	return logs, nil
+	stdDecoder := newStdDecoder(logs, true, false)
+	go stdDecoder.copy()
+	return stdDecoder, nil
 }
 
 func (client *dockerEngineClient) containerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
@@ -276,7 +334,9 @@ func (client *dockerEngineClient) containerStderrLogs(ctx context.Context, conta
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "get container stderr logs", nil)
 	}
-	return logs, nil
+	stdDecoder := newStdDecoder(logs, false, true)
+	go stdDecoder.copy()
+	return stdDecoder, nil
 }
 
 func (client *dockerEngineClient) stopContainer(ctx context.Context, containerID string) error {

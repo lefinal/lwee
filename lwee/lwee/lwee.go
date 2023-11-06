@@ -26,47 +26,44 @@ type Config struct {
 }
 
 type LWEE struct {
-	logger          *zap.Logger
-	config          Config
-	containerEngine container.Engine
-	actionFactory   *action.Factory
-	actions         []action.Action
-	flowFile        lweeflowfile.Flow
-	Locator         *locator.Locator
-	ioSupplier      actionio.Supplier
+	logger     *zap.Logger
+	config     Config
+	actions    []action.Action
+	flowFile   lweeflowfile.Flow
+	Locator    *locator.Locator
+	ioSupplier actionio.Supplier
 }
 
 type flowOutput func(ctx context.Context) error
 
 func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locator, config Config) (*LWEE, error) {
-	containerEngine, err := container.NewEngine(logger.Named("container-engine"), config.ContainerEngineType)
-	if err != nil {
-		return nil, meh.Wrap(err, "new container engine", meh.Details{"engine_type": config.ContainerEngineType})
-	}
 	lwee := &LWEE{
-		logger:          logger,
-		config:          config,
-		containerEngine: containerEngine,
-		Locator:         locator,
-		actions:         make([]action.Action, 0),
-		flowFile:        flowFile,
-		ioSupplier:      actionio.NewSupplier(logger.Named("io"), actionio.CopyOptions{}),
-	}
-	lwee.actionFactory = &action.Factory{
-		FlowName:        lwee.flowFile.Name,
-		RawFlow:         lwee.flowFile.Raw,
-		Locator:         lwee.Locator,
-		ContainerEngine: lwee.containerEngine,
-		IOSupplier:      lwee.ioSupplier,
+		logger:     logger,
+		config:     config,
+		Locator:    locator,
+		actions:    make([]action.Action, 0),
+		flowFile:   flowFile,
+		ioSupplier: actionio.NewSupplier(logger.Named("io"), actionio.CopyOptions{}),
 	}
 	return lwee, nil
 }
 
 func (lwee *LWEE) Run(ctx context.Context) error {
+	// Setup container engine.
+	containerEngine, err := container.NewEngine(ctx, lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType)
+	if err != nil {
+		return meh.Wrap(err, "new container engine", meh.Details{"engine_type": lwee.config.ContainerEngineType})
+	}
 	// Create actions.
-	var err error
+	actionFactory := &action.Factory{
+		FlowName:        lwee.flowFile.Name,
+		RawFlow:         lwee.flowFile.Raw,
+		Locator:         lwee.Locator,
+		ContainerEngine: containerEngine,
+		IOSupplier:      lwee.ioSupplier,
+	}
 	for actionName, actionFile := range lwee.flowFile.Actions {
-		newAction, err := lwee.actionFactory.NewAction(lwee.logger.Named("action").Named(logging.WrapName(actionName)), actionName, actionFile)
+		newAction, err := actionFactory.NewAction(lwee.logger.Named("action").Named(logging.WrapName(actionName)), actionName, actionFile)
 		if err != nil {
 			return meh.Wrap(err, fmt.Sprintf("create action %q", actionName), meh.Details{"action_name": actionName})
 		}
