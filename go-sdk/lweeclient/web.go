@@ -98,6 +98,7 @@ type server struct {
 }
 
 func newServer(logger *zap.Logger, listenAddr string, handler serverHandler) *server {
+	gin.SetMode(gin.ReleaseMode)
 	s := &server{
 		logger:     logger,
 		listenAddr: listenAddr,
