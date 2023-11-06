@@ -15,6 +15,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.26.0
 	golang.org/x/sync v0.3.0
+	gopkg.in/yaml.v3 v3.0.1
 	pgregory.net/rapid v1.1.0
 	sigs.k8s.io/yaml v1.3.0
 )
@@ -141,5 +142,4 @@ require (
 	gopkg.in/go-jose/go-jose.v2 v2.6.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
