@@ -183,9 +183,8 @@ func New(options Options) Client {
 		outputStreamsByStreamName: make(map[string]*outputStream),
 	}
 	if options.Logger != nil {
-		c.logger = options.Logger
+		c.logger, _ = NewLogger(zap.DebugLevel)
 	}
-	c.logger, _ = NewLogger(zap.DebugLevel)
 	if options.ListenAddr != "" {
 		c.listenAddr = options.ListenAddr
 	}
@@ -196,8 +195,8 @@ func New(options Options) Client {
 // returned logged before exiting!
 func NewLogger(level zapcore.Level) (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{"stderr", "tmp/lwee.log"}
-	config.ErrorOutputPaths = []string{"stderr", "tmp/lwee.log"}
+	config.OutputPaths = []string{"stderr", "/tmp/lwee.log"}
+	config.ErrorOutputPaths = []string{"stderr", "/tmp/lwee.log"}
 	config.Encoding = "console"
 	config.EncoderConfig = zapcore.EncoderConfig{
 		TimeKey:        "ts",
