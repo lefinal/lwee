@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,11 @@ func New(contextDir string, flowFilename string) (*Locator, error) {
 	_, err := os.Stat(contextDir)
 	if err != nil {
 		return nil, meh.NewBadInputErrFromErr(err, "stat context directory", meh.Details{"context_dir": contextDir})
+	}
+	// Get absolute context dir.
+	contextDir, err = filepath.Abs(contextDir)
+	if err != nil {
+		return nil, meh.Wrap(err, "get absolute path for context dir", meh.Details{"context_dir": contextDir})
 	}
 	actionTempDir := path.Join(os.TempDir(), "lwee",
 		time.Now().Format("2006-01-02_15-04-05")+"_"+strconv.Itoa(rand.Intn(999999)))
