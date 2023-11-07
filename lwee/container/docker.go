@@ -160,15 +160,16 @@ func (client *dockerEngineClient) createContainer(ctx context.Context, container
 	}
 	dockerContainerConfig := &dockercontainer.Config{
 		ExposedPorts: containerConfig.ExposedPorts,
+		WorkingDir:   containerConfig.WorkingDir,
 		Cmd:          containerConfig.Command,
 		Image:        containerConfig.Image,
+		User:         containerConfig.User,
 		StdinOnce:    true,
 		OpenStdin:    true,
 		Env:          envVars,
 	}
 	dockerContainerHostConfig := &dockercontainer.HostConfig{
-		AutoRemove: containerConfig.AutoRemove,
-		Mounts:     make([]mount.Mount, 0),
+		Mounts: make([]mount.Mount, 0),
 	}
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		dockerContainerHostConfig.Mounts = append(dockerContainerHostConfig.Mounts, mount.Mount{

@@ -2,26 +2,31 @@ package app
 
 import (
 	"context"
+	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/input"
 	"github.com/lefinal/lwee/lwee/locator"
+	"github.com/lefinal/lwee/lwee/projactionbuilder"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 )
 
 // commandCreateProjectAction creates an action directory and template for a new
 // action. The user is asked for input regarding the action name.
-func commandCreateProjectAction(ctx context.Context, logger *zap.Logger, config Config) error {
-	// Request action name.
-	actionName, err := input.RequestInput(ctx, "Action name (e.g., to-uppercase)", false)
-	if err != nil {
-		return meh.Wrap(err, "request action name", nil)
-	}
-	logger.Debug("got action name", zap.String("action_name", actionName))
+func commandCreateProjectAction(ctx context.Context, logger *zap.Logger, input input.Input, config Config) error {
 	// Create.
-	err = locator.Default().CreateProjectAction(actionName)
+	containerEngine, err := container.NewEngine(ctx, logger.Named("container-engine"), config.EngineType)
+	if err != nil {
+		return meh.Wrap(err, "create container engine", nil)
+	}
+	err = containerEngine.Start(ctx)
+	if err != nil {
+		return meh.Wrap(err, "start container engine", nil)
+	}
+	defer containerEngine.Stop()
+	builder := projactionbuilder.NewBuilder(logger, locator.Default(), input, containerEngine)
+	err = builder.Build(ctx)
 	if err != nil {
 		return meh.Wrap(err, "create action", nil)
 	}
-	logger.Info("action created", zap.String("action_dir", locator.Default().ProjectActionDirByAction(actionName)))
 	return nil
 }

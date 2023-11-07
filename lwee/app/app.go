@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lefinal/lwee/lwee/container"
+	"github.com/lefinal/lwee/lwee/input"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
@@ -26,7 +27,7 @@ type Config struct {
 
 type command struct {
 	noLocatorRequired bool
-	run               func(ctx context.Context, logger *zap.Logger, config Config) error
+	run               func(ctx context.Context, logger *zap.Logger, input input.Input, config Config) error
 }
 
 var commands = map[string]command{
@@ -44,7 +45,7 @@ var commands = map[string]command{
 	},
 }
 
-func Run(ctx context.Context, logger *zap.Logger, config Config) error {
+func Run(ctx context.Context, logger *zap.Logger, input input.Input, config Config) error {
 	start := time.Now()
 	defer func() {
 		logger.Debug("shutdown", zap.Duration("total_command_execution_time", time.Since(start)))
@@ -71,7 +72,7 @@ func Run(ctx context.Context, logger *zap.Logger, config Config) error {
 		}
 		locator.SetDefault(appLocator)
 	}
-	err := commandToRun.run(ctx, logger, config)
+	err := commandToRun.run(ctx, logger, input, config)
 	if err != nil {
 		return err
 	}

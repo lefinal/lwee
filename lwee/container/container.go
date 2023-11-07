@@ -31,12 +31,15 @@ type ImageBuildOptions struct {
 type Config struct {
 	ExposedPorts nat.PortSet
 	VolumeMounts []VolumeMount
+	WorkingDir   string
 	Command      []string
 	Image        string
+	User         string
 	Env          map[string]string
 	// Whether to remove the container after it exited. Normally, we need to set this
 	// to false in order to read stdout logs even if it finishes too fast. Otherwise,
-	// the logs would not be available.
+	// the logs would not be available or waiting for the container to finish might
+	// fail as it is deleted.
 	AutoRemove bool
 }
 
@@ -59,6 +62,7 @@ type Engine interface {
 	StopContainer(ctx context.Context, containerID string) error
 	WaitForContainerStopped(ctx context.Context, containerID string) error
 	RemoveContainer(ctx context.Context, containerID string) error
+	RunContainer(ctx context.Context, containerConfig Config) error
 }
 
 func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineType) (Engine, error) {
@@ -334,5 +338,23 @@ func (engine *engine) RemoveContainer(ctx context.Context, containerID string) e
 		return meh.Wrap(err, "remove container with client", container.mehDetails())
 	}
 	container.logger.Debug("container removed")
+	return nil
+}
+
+func (engine *engine) RunContainer(ctx context.Context, containerConfig Config) error {
+	containerID, err := engine.CreateContainer(ctx, containerConfig)
+	if err != nil {
+		return meh.Wrap(err, "create container", nil)
+	}
+	defer func() { _ = engine.StopContainer(ctx, containerID) }()
+	err = engine.StartContainer(ctx, containerID)
+	if err != nil {
+		return meh.Wrap(err, "start container", nil)
+	}
+	result := engine.client.waitForContainerStopped(ctx, containerID)
+	if result.error != nil {
+		engine.logger.Debug(fmt.Sprintf("container error logs:\n%s", result.stderrLogs))
+		return meh.Wrap(result.error, "wait for container stopped", nil)
+	}
 	return nil
 }

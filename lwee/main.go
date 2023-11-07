@@ -85,11 +85,12 @@ func run(ctx context.Context) error {
 	if len(os.Args) > 2 {
 		flowContextDir = os.Args[len(os.Args)-1]
 	}
+	appInput := &input.Stdin{}
 	go func() {
-		input.Consume(ctx)
+		appInput.Consume(ctx)
 	}()
 	// Run app.
-	err = app.Run(ctx, logger, app.Config{
+	err = app.Run(ctx, logger, appInput, app.Config{
 		EngineType:         container.EngineType(engineType),
 		Command:            command,
 		FlowFilename:       *flowFilenameFlag,

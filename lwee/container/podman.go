@@ -138,9 +138,10 @@ func (client *podmanEngineClient) createContainer(_ context.Context, containerCo
 	for exposedPort := range containerConfig.ExposedPorts {
 		containerSpec.Expose[uint16(exposedPort.Int())] = exposedPort.Proto()
 	}
+	containerSpec.WorkDir = containerConfig.WorkingDir
 	containerSpec.Command = containerConfig.Command
 	containerSpec.Stdin = true
-	containerSpec.Remove = containerConfig.AutoRemove
+	containerSpec.User = containerConfig.User
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		containerSpec.Mounts = append(containerSpec.Mounts, specs.Mount{
 			Destination: volumeMount.Target,

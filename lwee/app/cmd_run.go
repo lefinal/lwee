@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/lefinal/lwee/lwee/input"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/lwee/lwee/lwee"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
@@ -9,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func commandRun(ctx context.Context, logger *zap.Logger, config Config) error {
+func commandRun(ctx context.Context, logger *zap.Logger, _ input.Input, config Config) error {
 	// Parse flow.
 	flowFilename := locator.Default().FlowFilename()
 	flowFile, err := lweeflowfile.FromFile(flowFilename)

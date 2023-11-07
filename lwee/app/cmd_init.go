@@ -11,7 +11,7 @@ import (
 )
 
 // commandInit runs the CommandInit-command.
-func commandInit(ctx context.Context, logger *zap.Logger, config Config) error {
+func commandInit(ctx context.Context, logger *zap.Logger, input input.Input, config Config) error {
 	// Check if the directory is empty. Otherwise, request confirmation from the
 	// user.
 	contextDirEntries, err := os.ReadDir(config.ContextDir)

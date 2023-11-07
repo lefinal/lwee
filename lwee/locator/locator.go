@@ -108,7 +108,11 @@ func CreateDirIfNotExists(dir string) error {
 }
 
 func CreateIfNotExists(filename string, content []byte) error {
-	_, err := os.Stat(filename)
+	err := CreateDirIfNotExists(path.Dir(filename))
+	if err != nil {
+		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": path.Dir(filename)})
+	}
+	_, err = os.Stat(filename)
 	if err == nil {
 		// Already exists.
 		return nil
