@@ -58,6 +58,10 @@ func run(ctx context.Context) error {
 		fmt.Println("Arguments:")
 		flag.PrintDefaults()
 	}
+	if len(os.Args) < 3 {
+		flag.Usage()
+		return meh.NewBadInputErr("invalid usage", nil)
+	}
 	_ = flag.CommandLine.Parse(os.Args[2:])
 	// Set up logging.
 	logLevel := zap.InfoLevel
