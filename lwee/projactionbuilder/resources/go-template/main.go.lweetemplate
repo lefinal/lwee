@@ -19,7 +19,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Request output streams. // TODO: Replace with your own implementation.
+	// Provide output streams. // TODO: Replace with your own implementation.
 	entryCountOutput, err := client.ProvideOutputStream("entryCount")
 	if err != nil {
 		log.Fatal(err)
