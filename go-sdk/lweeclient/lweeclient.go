@@ -10,8 +10,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"io"
-	"os"
-	"strconv"
 	"sync"
 )
 
@@ -187,10 +185,7 @@ func New(options Options) Client {
 	if options.Logger != nil {
 		c.logger = options.Logger
 	}
-	if debug, err := strconv.ParseBool(os.Getenv(EnvDebug)); err == nil && debug {
-		c.logger, _ = NewLogger(zap.DebugLevel)
-		c.logger.Debug("running in debug mode")
-	}
+	c.logger, _ = NewLogger(zap.DebugLevel)
 	if options.ListenAddr != "" {
 		c.listenAddr = options.ListenAddr
 	}
@@ -201,6 +196,8 @@ func New(options Options) Client {
 // returned logged before exiting!
 func NewLogger(level zapcore.Level) (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
+	config.OutputPaths = []string{"stderr", "tmp/lwee.log"}
+	config.ErrorOutputPaths = []string{"stderr", "tmp/lwee.log"}
 	config.Encoding = "console"
 	config.EncoderConfig = zapcore.EncoderConfig{
 		TimeKey:        "ts",
