@@ -169,7 +169,8 @@ func (client *dockerEngineClient) createContainer(ctx context.Context, container
 		Env:          envVars,
 	}
 	dockerContainerHostConfig := &dockercontainer.HostConfig{
-		Mounts: make([]mount.Mount, 0),
+		AutoRemove: containerConfig.AutoRemove,
+		Mounts:     make([]mount.Mount, 0),
 	}
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		dockerContainerHostConfig.Mounts = append(dockerContainerHostConfig.Mounts, mount.Mount{

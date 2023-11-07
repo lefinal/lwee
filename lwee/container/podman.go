@@ -142,6 +142,7 @@ func (client *podmanEngineClient) createContainer(_ context.Context, containerCo
 	containerSpec.Command = containerConfig.Command
 	containerSpec.Stdin = true
 	containerSpec.User = containerConfig.User
+	containerSpec.Remove = containerConfig.AutoRemove
 	for _, volumeMount := range containerConfig.VolumeMounts {
 		containerSpec.Mounts = append(containerSpec.Mounts, specs.Mount{
 			Destination: volumeMount.Target,
