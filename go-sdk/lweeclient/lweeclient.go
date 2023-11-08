@@ -182,7 +182,7 @@ func New(options Options) Client {
 		inputStreamsByStreamName:  make(map[string]*inputStream),
 		outputStreamsByStreamName: make(map[string]*outputStream),
 	}
-	if options.Logger != nil {
+	if options.Logger == nil {
 		c.logger, _ = NewLogger(zap.DebugLevel)
 	}
 	if options.ListenAddr != "" {
