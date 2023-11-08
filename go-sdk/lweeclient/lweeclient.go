@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"io"
 	"sync"
+	"time"
 )
 
 const EnvDebug = "LWEE_DEBUG"
@@ -44,15 +45,17 @@ const (
 )
 
 type inputStream struct {
+	logger          *zap.Logger
 	readerForApp    io.Reader
 	writerForServer io.WriteCloser
 	state           inputStreamState
 	stateCond       *sync.Cond
 }
 
-func newInputStream() *inputStream {
+func newInputStream(logger *zap.Logger) *inputStream {
 	pipeReader, pipeWriter := io.Pipe()
 	return &inputStream{
+		logger:          logger,
 		readerForApp:    pipeReader,
 		writerForServer: pipeWriter,
 		state:           inputStreamStateWaitForOpen,
@@ -61,6 +64,7 @@ func newInputStream() *inputStream {
 }
 
 func (input *inputStream) WaitForOpen(ctx context.Context) error {
+	input.logger.Debug("wait for open")
 	open := make(chan struct{})
 	go func() {
 		input.stateCond.L.Lock()
@@ -78,6 +82,7 @@ func (input *inputStream) WaitForOpen(ctx context.Context) error {
 		return meh.NewInternalErrFromErr(ctx.Err(), "wait for state open", nil)
 	case <-open:
 	}
+	input.logger.Debug("input now open")
 	return nil
 }
 
@@ -95,6 +100,7 @@ const (
 )
 
 type outputStream struct {
+	logger               *zap.Logger
 	writerForApp         io.Closer
 	bufferedWriterForApp *bufio.Writer
 	readerForServer      io.Reader
@@ -104,9 +110,10 @@ type outputStream struct {
 	stateCond *sync.Cond
 }
 
-func newOutputStream(bufferSize int) *outputStream {
+func newOutputStream(logger *zap.Logger, bufferSize int) *outputStream {
 	pipeReader, pipeWriter := io.Pipe()
 	return &outputStream{
+		logger:               logger,
 		writerForApp:         pipeWriter,
 		bufferedWriterForApp: bufio.NewWriterSize(pipeWriter, bufferSize),
 		readerForServer:      pipeReader,
@@ -122,6 +129,7 @@ func (output *outputStream) Write(p []byte) (n int, err error) {
 func (output *outputStream) Open() error {
 	output.stateCond.L.Lock()
 	defer output.stateCond.L.Unlock()
+	output.logger.Debug("open")
 	if output.state != outputStreamStateWaitForOpen {
 		return meh.NewBadInputErr("stream already open or done", meh.Details{"stream_state": output.state})
 	}
@@ -135,6 +143,7 @@ func (output *outputStream) Close(err error) {
 	output.stateCond.L.Lock()
 	defer output.stateCond.L.Unlock()
 	defer func() { _ = output.writerForApp.Close() }()
+	output.logger.Debug("close")
 	if output.state == outputStreamStateDone || output.state == outputStreamStateError {
 		// Already closed.
 		return
@@ -240,7 +249,7 @@ func (c *client) RequestInputStream(streamName string) (InputReader, error) {
 	if _, ok := c.inputStreamsByStreamName[streamName]; ok {
 		return nil, meh.NewBadInputErr(fmt.Sprintf("duplicate request for input stream: %s", streamName), nil)
 	}
-	stream := newInputStream()
+	stream := newInputStream(c.logger.Named("input-stream").Named(streamName))
 	c.inputStreamsByStreamName[streamName] = stream
 	return stream, nil
 }
@@ -255,7 +264,7 @@ func (c *client) ProvideOutputStream(streamName string) (OutputWriter, error) {
 	if _, ok := c.outputStreamsByStreamName[streamName]; ok {
 		return nil, meh.NewBadInputErr(fmt.Sprintf("duplicate providing of output stream: %s", streamName), nil)
 	}
-	stream := newOutputStream(c.outputBufferSize)
+	stream := newOutputStream(c.logger.Named("output-stream").Named(streamName), c.outputBufferSize)
 	c.outputStreamsByStreamName[streamName] = stream
 	return stream, nil
 }
@@ -266,10 +275,14 @@ func (c *client) Do(fn func(ctx context.Context) error) {
 	c.doFns.Add(1)
 	go func() {
 		defer c.doFns.Done()
+		start := time.Now()
+		c.logger.Debug("start do-fn")
+		defer c.logger.Debug("do-fn done", zap.Duration("took", time.Since(start)))
 		err := fn(c.lifetime)
 		c.m.Lock()
 		defer c.m.Unlock()
 		if err != nil {
+			mehlog.Log(c.logger, meh.Wrap(err, "do-fn", nil))
 			c.cancel(err)
 			return
 		}
@@ -310,6 +323,7 @@ func (c *client) shutdown() {
 func (c *client) ioSummary() (ioSummary, error) {
 	c.m.Lock()
 	defer c.m.Unlock()
+	c.logger.Debug("io summary requested")
 	summary := ioSummary{
 		requestedInputStreams: make([]string, 0),
 		providedOutputStreams: make([]string, 0),
