@@ -1,6 +1,7 @@
 package container
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"github.com/docker/go-connections/nat"
@@ -240,6 +241,24 @@ func (engine *engine) StartContainer(ctx context.Context, containerID string) er
 	if err != nil {
 		return meh.Wrap(err, "start container with client", container.mehDetails())
 	}
+	go func() {
+		stderrLogs, err := engine.client.containerStderrLogs(ctx, containerID)
+		if err != nil {
+			mehlog.Log(engine.logger, meh.Wrap(err, "get container stderr logs", nil))
+			return
+		}
+		defer func() { _ = stderrLogs.Close() }()
+		stderrScanner := bufio.NewScanner(stderrLogs)
+		stderrLogger := container.logger.Named("stderr")
+		for stderrScanner.Scan() {
+			stderrLogger.Debug(stderrScanner.Text())
+		}
+		err = stderrScanner.Err()
+		if err != nil {
+			mehlog.Log(engine.logger, meh.Wrap(err, "read container stderr logs", nil))
+			return
+		}
+	}()
 	// If the container exited due to an error, we might want to read error logs from
 	// it. However, if, for example, streams are used, action IO will lead to earlier
 	// errors and therefore the passed context is done. Therefore, we start a
