@@ -34,7 +34,7 @@ func run(t *testing.T, config config) error {
 		}
 	})
 
-	err = app.Run(context.Background(), logger, app.Config{
+	err = app.Run(context.Background(), logger, nil, app.Config{
 		EngineType:         container.EngineTypeDocker,
 		Command:            config.command,
 		ContextDir:         config.contextDir,
