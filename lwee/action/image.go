@@ -413,10 +413,10 @@ func (action *imageRunner) Stop(ctx context.Context) error {
 }
 
 func projectActionImageTag(flowName string, actionName string) string {
-	const replaceNonAlphanumericWith = '_'
+	const replaceNonAlphanumericWith = 'x'
 	flowName = locator.ToAlphanumeric(flowName, replaceNonAlphanumericWith)
 	flowName = strings.ToLower(flowName)
 	actionName = locator.ToAlphanumeric(actionName, replaceNonAlphanumericWith)
 	actionName = strings.ToLower(actionName)
-	return fmt.Sprintf("lwee__%s__%s", flowName, actionName)
+	return fmt.Sprintf("lwee_%s_%s", flowName, actionName)
 }
