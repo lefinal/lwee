@@ -38,6 +38,7 @@ type imageRunner struct {
 	containerEngine   container.Engine
 	imageTag          string
 	command           []string
+	env               map[string]string
 	workspaceHostDir  string
 	workspaceMountDir string
 	containerID       string
@@ -343,6 +344,7 @@ func (action *imageRunner) Start(ctx context.Context) (<-chan error, error) {
 			},
 		},
 		Command: action.command,
+		Env:     action.env,
 		Image:   action.imageTag,
 	}
 	action.logger.Debug("create container",

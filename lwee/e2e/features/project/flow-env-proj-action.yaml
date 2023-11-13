@@ -1,0 +1,19 @@
+# Set the flow name according to the task it accomplishes.
+name: My env test flow.
+description: This flow tests whether env vars are passed correctly.
+in:
+actions:
+  myAction:
+    run:
+      type: proj-action
+      name: print-my-env
+      env:
+        MY_ENV: "Hello World from Project Action Runner!"
+    out:
+      result:
+        providedAs: stdout
+out:
+  result:
+    source: action.myAction.out.result
+    provideAs: file
+    filename: out/result.txt

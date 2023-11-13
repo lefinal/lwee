@@ -37,6 +37,7 @@ func (factory *Factory) newImageAction(base *Base, renderData templaterender.Dat
 			containerEngine:      factory.ContainerEngine,
 			imageTag:             imageActionDetails.Image,
 			command:              imageActionDetails.Command,
+			env:                  imageActionDetails.Env,
 			workspaceHostDir:     workspaceHostDir,
 			workspaceMountDir:    workspaceMountDir,
 			containerState:       containerStateReady,

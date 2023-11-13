@@ -73,6 +73,7 @@ func (factory *Factory) newProjectAction(base *Base, renderData templaterender.D
 				containerEngine:      factory.ContainerEngine,
 				imageTag:             projectActionImageTag(factory.FlowName, projectActionDetails.Name),
 				command:              projectActionDetails.Command,
+				env:                  projectActionDetails.Env,
 				workspaceHostDir:     workspaceHostDir,
 				workspaceMountDir:    workspaceMountDir,
 				containerState:       containerStateReady,

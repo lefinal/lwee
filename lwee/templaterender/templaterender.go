@@ -82,3 +82,18 @@ func (filler *Renderer) RenderStrings(strList []string) error {
 	}
 	return nil
 }
+
+func (filler *Renderer) RenderStringStringMap(m map[string]string) error {
+	for k, v := range m {
+		str := v
+		err := filler.render(&str)
+		if err != nil {
+			return meh.Wrap(err, "render", meh.Details{
+				"render_element_key":   k,
+				"render_element_value": v,
+			})
+		}
+		m[k] = str
+	}
+	return nil
+}

@@ -560,6 +560,17 @@ func TestActionRunnerImage_Validate(t *testing.T) {
 				val.Image = ""
 			},
 		},
+
+		{
+			name:  "env ok",
+			valid: true,
+			mutate: func(val *ActionRunnerImage) {
+				val.Env = map[string]string{
+					"DEBUG":  "true",
+					"ENGINE": "docker",
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -595,6 +606,17 @@ func TestActionRunnerProjectAction_Validate(t *testing.T) {
 			valid: false,
 			mutate: func(val *ActionRunnerProjectAction) {
 				val.Name = ""
+			},
+		},
+
+		{
+			name:  "env ok",
+			valid: true,
+			mutate: func(val *ActionRunnerProjectAction) {
+				val.Env = map[string]string{
+					"DEBUG":  "true",
+					"ENGINE": "docker",
+				}
 			},
 		},
 	}

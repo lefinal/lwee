@@ -302,8 +302,9 @@ func (runInfo ActionRunnerCommandRunInfo) Validate(path *validate.Path) *validat
 
 type ActionRunnerImage struct {
 	ActionRunnerBase
-	Image   string   `json:"image"`
-	Command []string `json:"command"`
+	Image   string            `json:"image"`
+	Command []string          `json:"command"`
+	Env     map[string]string `json:"env"`
 }
 
 func (runner ActionRunnerImage) Type() string {
@@ -319,6 +320,10 @@ func (runner ActionRunnerImage) Render(renderer *templaterender.Renderer) error 
 	if err != nil {
 		return meh.Wrap(err, "render command", nil)
 	}
+	err = renderer.RenderStringStringMap(runner.Env)
+	if err != nil {
+		return meh.Wrap(err, "render env", nil)
+	}
 	return nil
 }
 
@@ -332,9 +337,10 @@ func (runner ActionRunnerImage) Validate(path *validate.Path) *validate.Report {
 
 type ActionRunnerProjectAction struct {
 	ActionRunnerBase
-	Name    string   `json:"name"`
-	Config  string   `json:"config"`
-	Command []string `json:"command"`
+	Name    string            `json:"name"`
+	Config  string            `json:"config"`
+	Command []string          `json:"command"`
+	Env     map[string]string `json:"env"`
 }
 
 func (runner ActionRunnerProjectAction) Type() string {
@@ -349,6 +355,10 @@ func (runner ActionRunnerProjectAction) Render(renderer *templaterender.Renderer
 	err = renderer.RenderStrings(runner.Command)
 	if err != nil {
 		return meh.Wrap(err, "render command", nil)
+	}
+	err = renderer.RenderStringStringMap(runner.Env)
+	if err != nil {
+		return meh.Wrap(err, "render env", nil)
 	}
 	return nil
 }
