@@ -3,8 +3,11 @@ package lweeflowfile
 import (
 	"encoding/json"
 	"github.com/lefinal/lwee/lwee/fileparse"
+	"github.com/lefinal/lwee/lwee/validate"
 	"github.com/lefinal/meh"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"os"
+	"path/filepath"
 	k8syaml "sigs.k8s.io/yaml"
 	"strings"
 )
@@ -18,6 +21,22 @@ type Flow struct {
 	Outputs     FlowOutputs       `json:"out"`
 }
 
+func (flow *Flow) Validate() *validate.Report {
+	reporter := validate.NewReporter()
+	validate.ForField(reporter, field.NewPath("name"), flow.Name,
+		validate.AssertNotEmpty[string]())
+	for inputName, input := range flow.Inputs {
+		reporter.AddReport(input.Validate(field.NewPath("in").Key(inputName)))
+	}
+	for actionName, action := range flow.Actions {
+		reporter.AddReport(action.Validate(field.NewPath("actions").Key(actionName)))
+	}
+	for outputName, output := range flow.Outputs {
+		reporter.AddReport(output.Validate(field.NewPath("out").Key(outputName)))
+	}
+	return reporter.Report()
+}
+
 type FlowInputType string
 
 const (
@@ -26,6 +45,7 @@ const (
 
 type FlowInput interface {
 	Type() string
+	Validate(path *validate.Path) *validate.Report
 }
 
 func flowInputConstructor[T FlowInput](t T) FlowInput {
@@ -53,6 +73,17 @@ func (input FlowInputFile) Type() string {
 	return string(FlowInputTypeFile)
 }
 
+func (input FlowInputFile) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.NextField(path.Child("filename"), input.Filename)
+	validate.ForReporter(reporter, input.Filename,
+		validate.AssertNotEmpty[string]())
+	if input.Filename != "" && filepath.IsAbs(input.Filename) {
+		reporter.Warn("absolute paths make it more difficult to run the same flow in other environments")
+	}
+	return reporter.Report()
+}
+
 type FlowOutputType string
 
 const (
@@ -62,6 +93,7 @@ const (
 type FlowOutput interface {
 	SourceName() string
 	Type() string
+	Validate(path *validate.Path) *validate.Report
 }
 
 func flowOutputConstructor[T FlowOutput](t T) FlowOutput {
@@ -89,6 +121,17 @@ func (base FlowOutputBase) SourceName() string {
 	return base.Source
 }
 
+func (base FlowOutputBase) validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.NextField(path.Child("source"), base.Source)
+	validate.ForReporter(reporter, base.Source,
+		validate.AssertNotEmpty[string]())
+	if strings.Contains(base.Source, " ") {
+		reporter.Warn("spaces in source may lead to confusion in log output. consider renaming your source entities.")
+	}
+	return reporter.Report()
+}
+
 type FlowOutputFile struct {
 	FlowOutputBase
 	Filename string `json:"filename"`
@@ -96,6 +139,14 @@ type FlowOutputFile struct {
 
 func (output FlowOutputFile) Type() string {
 	return string(FlowOutputTypeFile)
+}
+
+func (output FlowOutputFile) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(output.FlowOutputBase.validate(path))
+	validate.ForField(reporter, path.Child("filename"), output.Filename,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
 }
 
 func ParseFlow(rawFlow json.RawMessage) (Flow, error) {

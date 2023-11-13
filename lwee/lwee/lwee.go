@@ -40,6 +40,26 @@ type LWEE struct {
 type flowOutput func(ctx context.Context) error
 
 func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locator, config Config) (*LWEE, error) {
+	// Verify the flow.
+	report := flowFile.Validate()
+	for _, issue := range report.Errors {
+		logger.Error(fmt.Sprintf("invalid flow field: %s: %s", issue.Field, issue.Detail),
+			zap.String("field", issue.Field),
+			zap.Any("bad_value", issue.BadValue),
+			zap.String("detail", issue.Detail))
+	}
+	for _, issue := range report.Warnings {
+		logger.Warn(fmt.Sprintf("flow issue: %s", issue.Detail),
+			zap.String("field", issue.Field),
+			zap.Any("bad_value", issue.BadValue))
+	}
+	if len(report.Errors) > 0 {
+		return nil, meh.NewBadInputErr("invalid flow", meh.Details{
+			"errors":   len(report.Errors),
+			"warnings": len(report.Warnings),
+		})
+	}
+	// Set up LWEE.
 	runInfoRecorder := runinfo.NewCollector(logger.Named("run-info"))
 	lwee := &LWEE{
 		logger:          logger,

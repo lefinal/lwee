@@ -1,0 +1,11 @@
+# Set the flow name according to the task it accomplishes.
+name: My Flow
+description: Add your description here.
+in:
+
+actions:
+out:
+  hello:
+    source: action.myAction.out.message # Source does not exist.
+    provideAs: file
+    filename: out/message.txt

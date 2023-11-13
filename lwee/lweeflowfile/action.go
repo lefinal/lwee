@@ -1,9 +1,16 @@
 package lweeflowfile
 
 import (
+	"context"
+	"fmt"
+	"github.com/lefinal/lwee/lwee/commandassert"
 	"github.com/lefinal/lwee/lwee/fileparse"
 	"github.com/lefinal/lwee/lwee/templaterender"
+	"github.com/lefinal/lwee/lwee/validate"
 	"github.com/lefinal/meh"
+	"go.uber.org/zap"
+	"os/exec"
+	"strings"
 )
 
 type Action struct {
@@ -11,6 +18,18 @@ type Action struct {
 	Inputs      ActionInputs       `json:"in"`
 	Runner      ActionRunnerHolder `json:"run"`
 	Outputs     ActionOutputs      `json:"out"`
+}
+
+func (action Action) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	for inputName, input := range action.Inputs {
+		reporter.AddReport(input.Validate(path.Child("in").Key(inputName)))
+	}
+	reporter.AddReport(action.Runner.Runner.Validate(path.Child("run")))
+	for outputName, output := range action.Outputs {
+		reporter.AddReport(output.Validate(path.Child("out").Key(outputName)))
+	}
+	return reporter.Report()
 }
 
 type ActionInputType string
@@ -25,6 +44,7 @@ const (
 type ActionInput interface {
 	SourceName() string
 	Type() string
+	Validate(path *validate.Path) *validate.Report
 }
 
 type ActionInputs map[string]ActionInput
@@ -51,6 +71,18 @@ type ActionInputBase struct {
 	Source string `json:"source"`
 }
 
+func (base ActionInputBase) validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.NextField(path.Child("source"), base.Source)
+	validate.ForReporter(reporter, base.Source,
+		validate.AssertNotEmpty[string]())
+	if strings.Contains(base.Source, " ") {
+		reporter.Warn("spaces in source may lead to confusion in log output. consider renaming your source entities.")
+	}
+
+	return reporter.Report()
+}
+
 func (base ActionInputBase) SourceName() string {
 	return base.Source
 }
@@ -62,6 +94,14 @@ type ActionInputWorkspaceFile struct {
 
 func (input ActionInputWorkspaceFile) Type() string {
 	return string(ActionInputTypeWorkspaceFile)
+}
+
+func (input ActionInputWorkspaceFile) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(input.ActionInputBase.validate(path))
+	validate.ForField(reporter, path.Child("filename"), input.Filename,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
 }
 
 type ActionInputFile struct {
@@ -81,12 +121,26 @@ func (input ActionInputFile) Render(renderer *templaterender.Renderer) error {
 	return nil
 }
 
+func (input ActionInputFile) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(input.ActionInputBase.validate(path))
+	validate.ForField(reporter, path.Child("filename"), input.Filename,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
+}
+
 type ActionInputStdin struct {
 	ActionInputBase
 }
 
 func (input ActionInputStdin) Type() string {
 	return string(ActionInputTypeStdin)
+}
+
+func (input ActionInputStdin) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(input.ActionInputBase.validate(path))
+	return reporter.Report()
 }
 
 type ActionInputStream struct {
@@ -96,6 +150,14 @@ type ActionInputStream struct {
 
 func (input ActionInputStream) Type() string {
 	return string(ActionInputTypeStream)
+}
+
+func (input ActionInputStream) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(input.ActionInputBase.validate(path))
+	validate.ForField(reporter, path.Child("streamName"), input.StreamName,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
 }
 
 type ActionRunnerType string
@@ -109,6 +171,7 @@ const (
 type ActionRunner interface {
 	Type() string
 	Render(renderer *templaterender.Renderer) error
+	Validate(path *validate.Path) *validate.Report
 }
 
 func actionRunnerConstructor[T ActionRunner](t T) ActionRunner {
@@ -135,27 +198,15 @@ func (runner *ActionRunnerHolder) UnmarshalJSON(data []byte) error {
 type ActionRunnerBase struct {
 }
 
+func (base ActionRunnerBase) validate(_ *validate.Path) *validate.Report {
+	return validate.NewReport()
+}
+
 type ActionRunnerCommand struct {
 	ActionRunnerBase
 	Command    []string                                `json:"command"`
 	Assertions map[string]ActionRunnerCommandAssertion `json:"assert"`
 	RunInfo    map[string]ActionRunnerCommandRunInfo   `json:"log"`
-}
-
-type ActionRunnerCommandAssertion struct {
-	// Run is the command to run that returns the assertion value that will be
-	// checked using the method described in Should.
-	Run []string `json:"run"`
-	// Should is the comparison-method to use.
-	Should string `json:"should"`
-	// Target is used for equality comparison.
-	Target string `json:"target"`
-}
-
-type ActionRunnerCommandRunInfo struct {
-	// Run is the command to run. The stdout and stderr result will be logged for the
-	// run.
-	Run []string `json:"run"`
 }
 
 func (runner ActionRunnerCommand) Type() string {
@@ -168,6 +219,85 @@ func (runner ActionRunnerCommand) Render(renderer *templaterender.Renderer) erro
 		return meh.Wrap(err, "render command", nil)
 	}
 	return nil
+}
+
+func (runner ActionRunnerCommand) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(runner.ActionRunnerBase.validate(path))
+
+	reporter.NextField(path.Child("command"), runner.Command)
+	if len(runner.Command) == 0 || runner.Command[0] == "" {
+		reporter.Error("required")
+	} else {
+		// Check whether the command exists.
+		_, err := exec.LookPath(runner.Command[0])
+		if err != nil {
+			reporter.Warn(fmt.Sprintf("look up command %q: %s", runner.Command[0], err))
+		}
+	}
+
+	for assertionName, assertion := range runner.Assertions {
+		reporter.AddReport(assertion.Validate(path.Child("assert").Key(assertionName)))
+	}
+
+	for infoName, info := range runner.RunInfo {
+		reporter.AddReport(info.Validate(path.Child("log").Key(infoName)))
+	}
+
+	return reporter.Report()
+}
+
+type ActionRunnerCommandAssertion struct {
+	// Run is the command to run that returns the assertion value that will be
+	// checked using the method described in Should.
+	Run []string `json:"run"`
+	// Should is the comparison-method to use.
+	Should string `json:"should"`
+	// Target is used for equality comparison.
+	Target string `json:"target"`
+}
+
+func (assertion ActionRunnerCommandAssertion) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.NextField(path.Child("run"), assertion.Run)
+	if len(assertion.Run) == 0 || assertion.Run[0] == "" {
+		reporter.Error("required")
+	} else {
+		// Run the assertion.
+		assertion, err := commandassert.New(commandassert.Options{
+			Logger: zap.NewNop(),
+			Run:    assertion.Run,
+			Should: commandassert.ShouldType(assertion.Should),
+			Target: assertion.Target,
+		})
+		if err != nil {
+			reporter.Warn(err.Error())
+		} else if err = assertion.Assert(context.Background()); err != nil {
+			reporter.Warn(err.Error())
+		}
+	}
+	return reporter.Report()
+}
+
+type ActionRunnerCommandRunInfo struct {
+	// Run is the command to run. The stdout and stderr result will be logged for the
+	// run.
+	Run []string `json:"run"`
+}
+
+func (runInfo ActionRunnerCommandRunInfo) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.NextField(path.Child("run"), runInfo.Run)
+	if len(runInfo.Run) == 0 || runInfo.Run[0] == "" {
+		reporter.Error("required")
+	} else {
+		// Check whether the command exists.
+		_, err := exec.LookPath(runInfo.Run[0])
+		if err != nil {
+			reporter.Warn(fmt.Sprintf("look up command %q: %s", runInfo.Run[0], err))
+		}
+	}
+	return reporter.Report()
 }
 
 type ActionRunnerImage struct {
@@ -190,6 +320,14 @@ func (runner ActionRunnerImage) Render(renderer *templaterender.Renderer) error 
 		return meh.Wrap(err, "render command", nil)
 	}
 	return nil
+}
+
+func (runner ActionRunnerImage) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(runner.ActionRunnerBase.validate(path))
+	validate.ForField(reporter, path.Child("image"), runner.Image,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
 }
 
 type ActionRunnerProjectAction struct {
@@ -215,6 +353,14 @@ func (runner ActionRunnerProjectAction) Render(renderer *templaterender.Renderer
 	return nil
 }
 
+func (runner ActionRunnerProjectAction) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	reporter.AddReport(runner.ActionRunnerBase.validate(path))
+	validate.ForField(reporter, path.Child("name"), runner.Name,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
+}
+
 type ActionOutputType string
 
 const (
@@ -225,6 +371,7 @@ const (
 
 type ActionOutput interface {
 	Type() string
+	Validate(path *validate.Path) *validate.Report
 }
 
 func actionOutputConstructor[T ActionOutput](t T) ActionOutput {
@@ -258,12 +405,23 @@ func (output ActionOutputWorkspaceFile) Type() string {
 	return string(ActionOutputTypeWorkspaceFile)
 }
 
+func (output ActionOutputWorkspaceFile) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	validate.ForField(reporter, path.Child("filename"), output.Filename,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
+}
+
 type ActionOutputStdout struct {
 	ActionOutputBase
 }
 
 func (output ActionOutputStdout) Type() string {
 	return string(ActionOutputTypeStdout)
+}
+
+func (output ActionOutputStdout) Validate(_ *validate.Path) *validate.Report {
+	return validate.NewReporter().Report()
 }
 
 type ActionOutputStream struct {
@@ -273,4 +431,11 @@ type ActionOutputStream struct {
 
 func (output ActionOutputStream) Type() string {
 	return string(ActionOutputTypeStream)
+}
+
+func (output ActionOutputStream) Validate(path *validate.Path) *validate.Report {
+	reporter := validate.NewReporter()
+	validate.ForField(reporter, path.Child("streamName"), output.StreamName,
+		validate.AssertNotEmpty[string]())
+	return reporter.Report()
 }

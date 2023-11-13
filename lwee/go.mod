@@ -16,6 +16,7 @@ require (
 	go.uber.org/zap v1.26.0
 	golang.org/x/sync v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/apimachinery v0.26.5
 	pgregory.net/rapid v1.1.0
 	sigs.k8s.io/yaml v1.3.0
 )

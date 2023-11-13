@@ -1,0 +1,18 @@
+# Set the flow name according to the task it accomplishes.
+name: My Flow
+description: Add your description here.
+in:
+
+actions:
+  myAction:
+    run:
+      type: image
+      image: "hello-world:latest"
+    out:
+      message:
+        providedAs: stdout
+out:
+  hello:
+    source: action.myAction.out.message
+    provideAs: file
+    filename: out/message.txt
