@@ -2,6 +2,7 @@ package container
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/docker/go-connections/nat"
@@ -111,9 +112,8 @@ type createdContainer struct {
 // containerStopResult is returned by client.waitForContainerStopped and holds
 // any occurred error as well as potential container log output.
 type containerStopResult struct {
-	error      error
-	exitCode   int
-	stderrLogs string
+	error    error
+	exitCode int
 }
 
 func (container createdContainer) mehDetails() meh.Details {
@@ -129,6 +129,7 @@ func (container createdContainer) mehDetails() meh.Details {
 type engine struct {
 	logger     *zap.Logger
 	client     engineClient
+	wg         sync.WaitGroup
 	cleanUpper *cleanUpper
 	// buildsInProgressByTag holds a map of tags that have ongoing builds. If another
 	// build is triggered for the same tag, it will be delayed until the first one is
@@ -165,6 +166,7 @@ func (engine *engine) Start(ctx context.Context) error {
 
 func (engine *engine) Stop() {
 	engine.cleanUpper.stop()
+	engine.wg.Wait()
 }
 
 func (engine *engine) createdContainerByID(containerID string) createdContainer {
@@ -241,7 +243,14 @@ func (engine *engine) StartContainer(ctx context.Context, containerID string) er
 	if err != nil {
 		return meh.Wrap(err, "start container with client", container.mehDetails())
 	}
+
+	var containerStderrLogs bytes.Buffer
+
+	engine.wg.Add(1)
+	containerLogsDone := make(chan struct{})
 	go func() {
+		defer engine.wg.Done()
+		defer close(containerLogsDone)
 		stderrLogs, err := engine.client.containerStderrLogs(ctx, containerID)
 		if err != nil {
 			mehlog.Log(engine.logger, meh.Wrap(err, "get container stderr logs", nil))
@@ -252,6 +261,7 @@ func (engine *engine) StartContainer(ctx context.Context, containerID string) er
 		stderrLogger := container.logger.Named("stderr")
 		for stderrScanner.Scan() {
 			stderrLogger.Debug(stderrScanner.Text())
+			containerStderrLogs.Write(stderrScanner.Bytes())
 		}
 		err = stderrScanner.Err()
 		if err != nil {
@@ -263,28 +273,37 @@ func (engine *engine) StartContainer(ctx context.Context, containerID string) er
 	// it. However, if, for example, streams are used, action IO will lead to earlier
 	// errors and therefore the passed context is done. Therefore, we start a
 	// goroutine that waits with a timeout for the container to stop if the given
-	// context is canceled in order to log error results.
-	gotResultWithContextErr := make(chan error)
-	defer func() { gotResultWithContextErr <- ctx.Err() }()
+	// context is canceled to log error results.
+	waitForContainerStoppedCtx, cancelWaitForContainerStopped := context.WithCancel(context.Background())
+	containerStopped := make(chan struct{})
+	engine.wg.Add(1)
 	go func() {
-		contextErr := <-gotResultWithContextErr
-		if contextErr == nil {
-			// Context not done. Nothing to do.
-			return
-		}
-		// Context was canceled.
+		defer engine.wg.Done()
+		defer cancelWaitForContainerStopped()
 		const waitTimeoutDur = 3 * time.Second
-		timeout, cancel := context.WithTimeout(context.Background(), waitTimeoutDur)
-		defer cancel()
-		result := engine.client.waitForContainerStopped(timeout, containerID)
-		if err != nil {
+		select {
+		case <-ctx.Done():
+			<-time.After(waitTimeoutDur)
+		case <-containerStopped:
+		}
+	}()
+	engine.wg.Add(1)
+	go func() {
+		defer engine.wg.Done()
+		defer close(containerStopped)
+		result := engine.client.waitForContainerStopped(waitForContainerStoppedCtx, containerID)
+		container.logger.Debug("container exited", zap.Int("exit_code", result.exitCode))
+		if result.error != nil {
 			// Provide error details for easier debugging.
+			<-containerLogsDone
 			var errorReportBuilder strings.Builder
 			errorReportBuilder.WriteString(fmt.Sprintf("container exited with code %d", result.exitCode))
-			errorReportBuilder.WriteString("\n\n******** begin of stderr logs ********\n")
-			errorReportBuilder.WriteString(result.stderrLogs)
+			errorReportBuilder.WriteString("\n")
+			errorReportBuilder.WriteString("\n******** begin of stderr logs ********\n")
+			_, _ = io.Copy(&errorReportBuilder, &containerStderrLogs)
 			errorReportBuilder.WriteString("\n******** end of stderr logs ********\n")
-			engine.logger.Error(errorReportBuilder.String())
+			errorReportBuilder.WriteString("\n")
+			container.logger.Error(errorReportBuilder.String())
 			mehlog.Log(container.logger, meh.Wrap(err, "wait for container stopped", container.mehDetails()))
 			return
 		}
@@ -372,7 +391,6 @@ func (engine *engine) RunContainer(ctx context.Context, containerConfig Config) 
 	}
 	result := engine.client.waitForContainerStopped(ctx, containerID)
 	if result.error != nil {
-		engine.logger.Debug(fmt.Sprintf("container error logs:\n%s", result.stderrLogs))
 		return meh.Wrap(result.error, "wait for container stopped", nil)
 	}
 	return nil

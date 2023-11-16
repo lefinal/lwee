@@ -227,15 +227,6 @@ func (client *dockerEngineClient) waitForContainerStopped(ctx context.Context, c
 		// Handle non-zero exit code.
 		if response.StatusCode != 0 {
 			stopResult.error = meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", response.StatusCode), nil)
-			stderrLogsReader, openStderrErr := client.containerStderrLogs(ctx, containerID)
-			if openStderrErr != nil {
-				stopResult.error = meh.ApplyDetails(stopResult.error, meh.Details{"retrieve_stderr_logs_err": openStderrErr})
-				stopResult.stderrLogs = "<stderr logs cannot be retrieved>"
-			} else {
-				var stderrLogs bytes.Buffer
-				_, _ = stdcopy.StdCopy(&stderrLogs, &stderrLogs, stderrLogsReader)
-				stopResult.stderrLogs = stderrLogs.String()
-			}
 		}
 	}
 	return stopResult
@@ -349,6 +340,7 @@ func (client *dockerEngineClient) containerStdoutLogs(ctx context.Context, conta
 
 func (client *dockerEngineClient) containerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
 	logs, err := client.dockerClient.ContainerLogs(ctx, containerID, dockertypes.ContainerLogsOptions{
+		Since:      time.Time{}.Format(time.RFC3339),
 		ShowStderr: true,
 		Follow:     true,
 	})

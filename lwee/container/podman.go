@@ -12,7 +12,6 @@ import (
 	"github.com/containers/podman/v4/pkg/bindings/images"
 	"github.com/containers/podman/v4/pkg/domain/entities"
 	"github.com/containers/podman/v4/pkg/specgen"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/lefinal/meh"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.uber.org/zap"
@@ -196,15 +195,6 @@ func (client *podmanEngineClient) waitForContainerStopped(ctx context.Context, c
 	// Handle non-zero exit code.
 	if exitCode != 0 {
 		stopResult.error = meh.NewBadInputErr(fmt.Sprintf("container exited with code %d", exitCode), nil)
-		stderrLogsReader, openStderrErr := client.containerStderrLogs(ctx, containerID)
-		if openStderrErr != nil {
-			stopResult.error = meh.ApplyDetails(stopResult.error, meh.Details{"retrieve_stderr_logs_err": openStderrErr})
-			stopResult.stderrLogs = "<stderr logs cannot be retrieved>"
-		} else {
-			var stderrLogs bytes.Buffer
-			_, _ = stdcopy.StdCopy(&stderrLogs, &stderrLogs, stderrLogsReader)
-			stopResult.stderrLogs = stderrLogs.String()
-		}
 	}
 	return stopResult
 }
