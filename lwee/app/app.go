@@ -50,6 +50,10 @@ func Run(ctx context.Context, logger *zap.Logger, input input.Input, config Conf
 	defer func() {
 		logger.Debug("shutdown", zap.Duration("total_command_execution_time", time.Since(start)))
 	}()
+	go func() {
+		<-ctx.Done()
+		logger.Debug("shutdown initiated")
+	}()
 	if config.ContextDir != "" && config.FlowFilename == "" {
 		config.FlowFilename = path.Join(config.ContextDir, defaultFlowFilename)
 	}

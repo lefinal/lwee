@@ -37,29 +37,40 @@ func NewBuilder(logger *zap.Logger, locator *locator.Locator, input input.Input,
 	}
 }
 
+func validateActionName(s string) error {
+	validRegex := regexp.MustCompile("^([a-zA-Z]+[a-zA-Z0-9\\-]*)$")
+	if s == "" {
+		return fmt.Errorf("must not be empty")
+	}
+	if !validRegex.MatchString(s) {
+		return fmt.Errorf("invalid action name")
+	}
+	return nil
+}
+
 func (builder *Builder) Build(ctx context.Context) error {
 	var err error
 	// Request the action name.
-	builder.actionName, err = builder.input.Request(ctx, "Action name (e.g., to-uppercase)", false)
+	builder.actionName, err = builder.input.Request(ctx, "Action name (e.g., to-uppercase)", validateActionName)
 	if err != nil {
 		return meh.Wrap(err, "request action name", nil)
 	}
+	builder.actionName = strings.TrimSpace(builder.actionName)
 	builder.logger.Debug("got action name", zap.String("action_name", builder.actionName))
 	// Request the template name.
-	templateName, err := builder.input.Request(ctx, "Template (go, go-no-sdk, none) [none]", true)
+	templateBuilders := make([]func(ctx context.Context) error, 0)
+	templateNames := make([]string, 0)
+	templateNames = append(templateNames, "None")
+	templateBuilders = append(templateBuilders, nil)
+	templateNames = append(templateNames, "Go (SDK)")
+	templateBuilders = append(templateBuilders, builder.buildGoTemplate)
+	templateNames = append(templateNames, "Go (native)")
+	templateBuilders = append(templateBuilders, builder.buildGoTemplateNoSDK)
+	templateIndex, templateName, err := builder.input.RequestSelection(ctx, "Select a template", templateNames)
 	if err != nil {
 		return meh.Wrap(err, "request template", nil)
 	}
-	var buildTemplate func(ctx context.Context) error
-	switch templateName {
-	case "go":
-		buildTemplate = builder.buildGoTemplate
-	case "go-no-sdk":
-		buildTemplate = builder.buildGoTemplateNoSDK
-	case "none", "":
-	default:
-		return meh.NewBadInputErr(fmt.Sprintf("unsupported template: %s", templateName), nil)
-	}
+	buildTemplate := templateBuilders[templateIndex]
 	// Build action and template.
 	err = builder.buildAction()
 	if err != nil {
@@ -98,6 +109,7 @@ func (builder *Builder) buildAction() error {
 }
 
 func (builder *Builder) buildGoTemplate(ctx context.Context) error {
+	builder.logger.Info("making sure you get the most recent SDK version. this might take a while...")
 	actionLocator := builder.locator.ProjectActionLocatorByAction(builder.actionName)
 	currentUser, err := user.Current()
 	if err != nil {

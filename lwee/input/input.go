@@ -1,11 +1,10 @@
 package input
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"github.com/lefinal/meh"
-	"os"
+	"github.com/manifoldco/promptui"
 	"strings"
 )
 
@@ -14,84 +13,109 @@ var readLine = make(chan string, 16)
 type Input interface {
 	// RequestConfirm prompts the user with the given one for confirmation. If no
 	// input was provided, the given default value will be returned.
-	//
-	// The provided prompt should be in the format of a question, e.g., "Are you sure
-	// you want to do this?" or similar. RequestConfirm will append a space and the
-	// confirmation options.
 	RequestConfirm(ctx context.Context, prompt string, defaultValue bool) (bool, error)
 
 	// Request prompts the user with the given one for an input.
-	//
-	// The provided prompt should be in the format of "Enter xyz". RequestInput will
-	// append colons.
-	Request(ctx context.Context, prompt string, allowEmpty bool) (string, error)
+	Request(ctx context.Context, prompt string, validate func(s string) error) (string, error)
+
+	RequestSelection(ctx context.Context, prompt string, options []string) (int, string, error)
 }
 
 type Stdin struct {
 }
 
-// Consume starts reading input from stdin. It should be only called once.
-// Consume blocks until the given context is done or EOF is reached.
-func (input *Stdin) Consume(ctx context.Context) {
-	var stdinScanner = bufio.NewScanner(os.Stdin)
-	for stdinScanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return
-		case readLine <- stdinScanner.Text():
-		}
+func (input *Stdin) RequestConfirm(ctx context.Context, prompt string, defaultValue bool) (bool, error) {
+	defaultValueStr := "n"
+	if defaultValue {
+		defaultValueStr = "y"
 	}
+
+	for {
+		myPrompt := promptui.Prompt{
+			Label:     prompt,
+			Default:   defaultValueStr,
+			IsConfirm: true,
+		}
+		resultStr, err := myPrompt.Run()
+		if err == nil || err.Error() == "" {
+			// OK.
+			switch strings.ToLower(resultStr) {
+			case "y":
+				return true, nil
+			case "n":
+				return false, nil
+			case "":
+				return defaultValue, nil
+			}
+		}
+		// Error or invalid value.
+		if shouldAbortPrompt(ctx, err) {
+			return false, meh.NewBadInputErr("canceled", nil)
+		}
+		fmt.Println(createErrorMessage("invalid value entered", err, resultStr))
+	}
+
 }
 
-func (input *Stdin) RequestConfirm(ctx context.Context, prompt string, defaultValue bool) (bool, error) {
-	yes := "y"
-	no := "n"
-	if defaultValue {
-		yes = strings.ToUpper(yes)
-	} else {
-		no = strings.ToUpper(no)
+func shouldAbortPrompt(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
 	}
-	prompt = fmt.Sprintf("%s [%s/%s]: ", prompt, yes, no)
-	for {
-		fmt.Print(prompt)
-		// Read the answer.
-		var answer string
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case answer = <-readLine:
-		}
-		// Parse answer.
-		answer = strings.ToLower(answer)
-		if answer == "" {
-			return defaultValue, nil
-		}
-		if answer == "y" || answer == "yes" {
-			return true, nil
-		}
-		if answer == "n" || answer == "no" {
-			return false, nil
-		}
-		// No valid answer was provided. Repeat.
+	if err != nil && err.Error() == "^C" {
+		return true
 	}
+	return false
+}
+
+func createErrorMessage(message string, err error, value string) string {
+	errDescription := message
+	if err.Error() != "" {
+		errDescription += fmt.Sprintf(" (%s)", err.Error())
+	}
+	if value != "" {
+		errDescription += fmt.Sprintf(": %s", value)
+	}
+	return errDescription
 }
 
 // Request prompt the user with the given one for an input.
 //
 // The provided prompt should be in the format of "Enter xyz". RequestInput will
 // append colons.
-func (input *Stdin) Request(ctx context.Context, prompt string, allowEmpty bool) (string, error) {
+func (input *Stdin) Request(ctx context.Context, prompt string, validate func(s string) error) (string, error) {
 	for {
-		fmt.Print(fmt.Sprintf("%s: ", prompt))
-		var answer string
-		select {
-		case <-ctx.Done():
-			return "", meh.ApplyCode(ctx.Err(), meh.ErrInternal)
-		case answer = <-readLine:
+		myPrompt := promptui.Prompt{
+			Label:    prompt,
+			Validate: validate,
 		}
-		if answer != "" || allowEmpty {
-			return answer, nil
+		result, err := myPrompt.Run()
+		if err == nil {
+			// OK.
+			return result, nil
 		}
-		fmt.Println("Please provide a non-empty value.")
+		// Error or invalid value.
+		if shouldAbortPrompt(ctx, err) {
+			return "", meh.NewBadInputErr("canceled", nil)
+		}
+		fmt.Println(createErrorMessage("invalid value entered", err, result))
+	}
+}
+
+func (input *Stdin) RequestSelection(ctx context.Context, prompt string, options []string) (int, string, error) {
+	for {
+		myPrompt := promptui.Select{
+			Label: prompt,
+			Items: options,
+		}
+		resultIndex, result, err := myPrompt.Run()
+		if err == nil {
+			// OK.
+			return resultIndex, result, nil
+		}
+		// Error or invalid value.
+		if shouldAbortPrompt(ctx, err) {
+			return 0, "", meh.NewBadInputErr("canceled", nil)
+		}
+		fmt.Println(createErrorMessage("invalid value entered", err, result))
 	}
 }

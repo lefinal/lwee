@@ -30,7 +30,7 @@ func Run(runnable Runnable) error {
 // Wait until a terminate signal is received or the given context is done.
 func Wait(ctx context.Context) {
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	select {
 	case <-ctx.Done():
 	case <-signals:

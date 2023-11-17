@@ -20,12 +20,12 @@ func commandInit(ctx context.Context, logger *zap.Logger, input input.Input, con
 	}
 	if len(contextDirEntries) > 0 {
 		logger.Debug(fmt.Sprintf("found %d entries in context directory", contextDirEntries))
-		confirmed, err := input.RequestConfirm(ctx, "Directory not empty. Continue with potential data loss?", false)
+		confirmed, err := input.RequestConfirm(ctx, "Directory not empty. Continue with potential data loss", false)
 		if err != nil {
 			return meh.Wrap(err, "request overwrite confirmation", nil)
 		}
 		if !confirmed {
-			return meh.NewBadInputErr("aborted because of context directory not being empty",
+			return meh.NewBadInputErr("canceled because of context directory not being empty",
 				meh.Details{"context_dir": config.ContextDir})
 		}
 		logger.Debug("potential overwrite confirmed")

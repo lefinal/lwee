@@ -90,10 +90,6 @@ func run(ctx context.Context) error {
 		flowContextDir = os.Args[len(os.Args)-1]
 	}
 	appInput := &input.Stdin{}
-	go func() {
-		appInput.Consume(ctx)
-	}()
-	// Run app.
 	err = app.Run(ctx, logger, appInput, app.Config{
 		EngineType:         container.EngineType(engineType),
 		Command:            command,
