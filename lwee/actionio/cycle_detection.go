@@ -24,13 +24,13 @@ func assureNoCycles(forwarders []*sourceForwarder) error {
 		}
 		for _, reader := range forwarder.readers {
 			// Get requester id.
-			if reader.entityName == "" {
+			if reader.sourceEntityName == "" {
 				return meh.NewInternalErr("missing requester entity name", meh.Details{"requester": reader.requesterName})
 			}
-			requesterID, ok := entityIDsByName[reader.entityName]
+			requesterID, ok := entityIDsByName[reader.sourceEntityName]
 			if !ok {
 				requesterID = node(len(entityIDsByName))
-				entityIDsByName[reader.entityName] = requesterID
+				entityIDsByName[reader.sourceEntityName] = requesterID
 			}
 			// Register edge in graph.
 			ioGraph.addEdge(providerID, requesterID)

@@ -18,22 +18,32 @@ const DefaultReaderSourceBufferSize = 10000000 // 10MB
 
 type SourceReader struct {
 	Name   string
-	Open   <-chan struct{}
+	Open   <-chan *AvailableOptimizations
 	Reader io.ReadCloser
 }
 
+// WaitForOpen waits until the reader is open or the given context is done.
+func (reader *SourceReader) WaitForOpen(ctx context.Context) (*AvailableOptimizations, error) {
+	select {
+	case <-ctx.Done():
+		return nil, meh.NewInternalErrFromErr(ctx.Err(), "context done", meh.Details{"source_name": reader.Name})
+	case availableOptimizations := <-reader.Open:
+		return availableOptimizations, nil
+	}
+}
+
 type sourceReader struct {
-	entityName string
+	sourceEntityName string
 	// requesterName holds a string representation of the requesterName's identifier.
 	// This is used for logging as well as cycle detection.
 	requesterName string
-	open          chan<- struct{}
+	open          chan<- *AvailableOptimizations
 	writer        io.WriteCloser
 }
 
 type SourceWriter struct {
 	Name   string
-	Open   chan<- struct{}
+	Open   chan<- AlternativeSourceAccess
 	Writer io.WriteCloser
 }
 
@@ -42,8 +52,41 @@ type sourceWriter struct {
 	// providerName holds a string representation of the providerName's identifier.
 	// This is used for logging as well as cycle detection.
 	providerName string
-	open         <-chan struct{}
+	open         <-chan AlternativeSourceAccess
 	reader       io.ReadCloser
+}
+
+type AlternativeSourceAccess struct {
+	// Filename is a non-empty string if the source data is also available as file at
+	// the specified location.
+	Filename string
+}
+
+type AvailableOptimizations struct {
+	// Filename is a non-empty string if only one reader requested the source and the
+	// source data is available as file. The reader might then just move the file if
+	// it provides file access, anyway.
+	Filename string
+
+	isSkipped        bool
+	skipTransmission func()
+}
+
+// SkipTransmission reports to the source writer that the data has been
+// transmitted manually and is not required to be sent anymore. Make sure to call
+// SkipTransmission before closing the source reader.
+func (optimizations *AvailableOptimizations) SkipTransmission() {
+	optimizations.isSkipped = true
+	if optimizations.skipTransmission != nil {
+		optimizations.skipTransmission()
+	}
+}
+
+// IsTransmissionSkipped returns true when SkipTransmission was called. If so, no
+// data transmission will be performed. This is used when optimizations have been
+// applied that copied all required data.
+func (optimizations *AvailableOptimizations) IsTransmissionSkipped() bool {
+	return optimizations.isSkipped
 }
 
 type Supplier interface {
@@ -57,7 +100,7 @@ type SourceReadyNotifierFn func(sourceName string)
 
 type Ingestor func(ctx context.Context, source io.Reader) error
 
-type Outputter func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error
+type Outputter func(ctx context.Context, ready chan<- AlternativeSourceAccess, writer io.WriteCloser) error
 
 type sourceForwarder struct {
 	logger          *zap.Logger
@@ -66,6 +109,15 @@ type sourceForwarder struct {
 	writer          sourceWriter
 	readers         []sourceReader
 	runInfoRecorder *runinfo.Recorder
+}
+
+func determineAvailableOptimizations(logger *zap.Logger, alternativeSourceAccess AlternativeSourceAccess, readers []sourceReader) AvailableOptimizations {
+	availableOptimizations := AvailableOptimizations{}
+	if alternativeSourceAccess.Filename != "" && len(readers) == 1 {
+		logger.Debug("detected available optimization via filename")
+		availableOptimizations.Filename = alternativeSourceAccess.Filename
+	}
+	return availableOptimizations
 }
 
 func (forwarder *sourceForwarder) forward(ctx context.Context) error {
@@ -82,32 +134,56 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	start := time.Now()
 	writeInfo.WaitForOpenStart = start
 	forwarder.logger.Debug("wait for source writer ready")
+	var alternativeSourceAccess AlternativeSourceAccess
 	select {
 	case <-ctx.Done():
 		return meh.NewInternalErrFromErr(ctx.Err(), "wait for source writer ready", nil)
-	case <-forwarder.writer.open:
+	case alternativeSourceAccess = <-forwarder.writer.open:
 	}
 	writeInfo.WaitForOpenEnd = time.Now()
 	forwarder.logger.Debug(fmt.Sprintf("source writer has opened. forwarding to %d reader(s)", len(forwarder.readers)),
 		zap.Time("source_writer_ready_at", time.Now()),
 		zap.Duration("source_writer_ready_after", time.Since(start)))
 	// Forward to all source readers.
-	sourceReadersAsWriters := make([]io.Writer, 0)
+	sourceReadersAsWriters := make([]*ioCopyWriter, 0)
+
 	if len(forwarder.readers) > 0 {
-		// Map to io.Writer for usage with io.MultiWriter.
-		for _, r := range forwarder.readers {
-			sourceReadersAsWriters = append(sourceReadersAsWriters, r.writer)
-		}
+		availableOptimizations := determineAvailableOptimizations(forwarder.logger, alternativeSourceAccess, forwarder.readers)
+		// Set up each reader and notify them about the source being open.
 		forwarder.logger.Debug("notify all readers of source being open")
-		start = time.Now()
-		err := notifyReadersOfOpenSource(ctx, forwarder.readers)
-		if err != nil {
-			return meh.Wrap(err, "notify readers of open source", nil)
+		readerNotificationsAboutOpenSource, notifyCtx := errgroup.WithContext(ctx)
+		for _, reader := range forwarder.readers {
+			reader := reader
+			sourceReaderIOCopyWriter := newIOCopyWriter(reader.writer)
+			sourceReadersAsWriters = append(sourceReadersAsWriters, sourceReaderIOCopyWriter)
+			availableOptimizationsForReader := availableOptimizations
+			availableOptimizationsForReader.skipTransmission = func() {
+				sourceReaderIOCopyWriter.skip()
+				forwarder.logger.Debug("source reader skipped transmission",
+					zap.String("source_entity", reader.sourceEntityName),
+					zap.String("reader_requester", reader.requesterName))
+			}
+			readerNotificationsAboutOpenSource.Go(func() error {
+				select {
+				case <-notifyCtx.Done():
+					return meh.NewInternalErrFromErr(ctx.Err(), "notify reader of source being open", meh.Details{
+						"source_entity":    reader.sourceEntityName,
+						"reader_requester": reader.requesterName,
+					})
+				case reader.open <- &availableOptimizationsForReader:
+				}
+				return nil
+			})
 		}
+		err := readerNotificationsAboutOpenSource.Wait()
+		if err != nil {
+			return meh.Wrap(err, "notify readers of source being open", nil)
+		}
+		start = time.Now()
 		forwarder.logger.Debug("all readers notified", zap.Duration("took", time.Since(start)))
 	} else {
 		// No readers registered. Discard.
-		sourceReadersAsWriters = append(sourceReadersAsWriters, io.Discard)
+		sourceReadersAsWriters = append(sourceReadersAsWriters, newIOCopyWriter(io.Discard))
 		forwarder.logger.Debug("discard source output due to no readers registered")
 	}
 	copyDone := make(chan error)
@@ -116,8 +192,9 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	var stats ioCopyStats
 	go func() {
 		forwarder.logger.Debug("copy data", zap.Int("source_readers", len(forwarder.readers)))
+		copier := newIOMultiCopier(forwarder.writer.reader, forwarder.copyOptions, sourceReadersAsWriters)
 		var err error
-		stats, err = ioCopyToMultiWithStats(forwarder.writer.reader, forwarder.copyOptions, sourceReadersAsWriters...)
+		stats, err = copier.copyToMultiWithStats()
 		if err != nil {
 			err = meh.Wrap(err, "copy", nil)
 		}
@@ -179,22 +256,6 @@ func (forwarder *sourceForwarder) requesterNames() []string {
 	return requestedByReaders
 }
 
-func notifyReadersOfOpenSource(ctx context.Context, readers []sourceReader) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, reader := range readers {
-		reader := reader
-		eg.Go(func() error {
-			select {
-			case <-ctx.Done():
-				return meh.NewInternalErrFromErr(ctx.Err(), "notify reader of source being open", nil)
-			case reader.open <- struct{}{}:
-			}
-			return nil
-		})
-	}
-	return eg.Wait()
-}
-
 // supplier is the implementation of Supplier.
 type supplier struct {
 	logger          *zap.Logger
@@ -227,13 +288,13 @@ func (supplier *supplier) RequestSource(sourceName string, entityName string, re
 	supplier.logger.Debug(fmt.Sprintf("request source %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
-	open := make(chan struct{})
+	open := make(chan *AvailableOptimizations)
 	reader, writer := io.Pipe()
 	readerToKeepInternally := sourceReader{
-		entityName:    entityName,
-		requesterName: requesterName,
-		open:          open,
-		writer:        writer,
+		sourceEntityName: entityName,
+		requesterName:    requesterName,
+		open:             open,
+		writer:           writer,
 	}
 	readerToReturn := SourceReader{
 		Name:   sourceName,
@@ -258,7 +319,7 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string, entityName s
 	supplier.logger.Debug(fmt.Sprintf("provide source output %q", sourceName))
 	supplier.m.Lock()
 	defer supplier.m.Unlock()
-	open := make(chan struct{})
+	open := make(chan AlternativeSourceAccess)
 	reader, writer := io.Pipe()
 	writerToKeepInternally := sourceWriter{
 		entityName:   entityName,

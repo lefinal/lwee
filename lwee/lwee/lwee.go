@@ -131,7 +131,8 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 		flowOutputs = append(flowOutputs, registeredFlowOutput)
 	}
 	// Prepare scheduler and register IO.
-	actionScheduler, err := scheduler.New(ctx, lwee.logger.Named("scheduler"), lwee.ioSupplier, lwee.actions, lwee.runInfoRecorder)
+	eg, runCtx := errgroup.WithContext(ctx)
+	actionScheduler, err := scheduler.New(runCtx, lwee.logger.Named("scheduler"), lwee.ioSupplier, lwee.actions, lwee.runInfoRecorder)
 	if err != nil {
 		return meh.Wrap(err, "setup actions with scheduler", nil)
 	}
@@ -146,7 +147,7 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	// Defer cleanup.
 	defer func() {
 		if lwee.config.KeepTemporaryFiles {
-			lwee.logger.Info(fmt.Sprintf("keeping temporary files in %s", lwee.Locator.ActionTempDir()))
+			lwee.logger.Warn(fmt.Sprintf("keeping temporary files in %s", lwee.Locator.ActionTempDir()))
 		} else {
 			lwee.logger.Debug("delete temporary files", zap.String("action_temp_dir", lwee.Locator.ActionTempDir()))
 			_ = os.RemoveAll(lwee.Locator.ActionTempDir())
@@ -161,7 +162,6 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	start := time.Now()
 	lwee.runInfoRecorder.RecordFlowStart(start)
 	lwee.logger.Info("run actions")
-	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		err := actionScheduler.Run()
 		if err != nil {
@@ -170,7 +170,7 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 		return nil
 	})
 	eg.Go(func() error {
-		err := lwee.ioSupplier.Forward(ctx)
+		err := lwee.ioSupplier.Forward(runCtx)
 		if err != nil {
 			return meh.Wrap(err, "forward io", nil)
 		}
@@ -179,7 +179,7 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	for _, flowOutput := range flowOutputs {
 		flowOutput := flowOutput
 		eg.Go(func() error {
-			return flowOutput(ctx)
+			return flowOutput(runCtx)
 		})
 	}
 	err = eg.Wait()

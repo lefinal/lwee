@@ -5,12 +5,19 @@ import (
 	"github.com/docker/docker/api/types"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/lefinal/zaprec"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
 	"io"
 	"os"
 	"path"
+	"strings"
 	"testing"
 )
+
+const logMessageForAppliedMoveFileOptimization = "filename optimization available. moving file."
+const logMessageForFailedAppliedMoveFileOptimization = "copy source regularly due to failed move"
+const logMessageForSkippedTransmission = "source reader skipped transmission"
 
 type featuresSuite struct {
 	suite.Suite
@@ -74,6 +81,102 @@ func (suite *featuresSuite) TestEnvWithImageRunner() {
 	got, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read result file should not fail")
 	suite.Contains(string(got), expect, "should have written correct result")
+}
+
+func (suite *featuresSuite) TestFileCopyOptimizationFlowOutputFile() {
+	const expectedLines = 32
+
+	logger, logRecords := zaprec.NewRecorder(zap.DebugLevel)
+	suite.e2eConfig.logger = logger
+
+	// Run.
+	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-flow-out-file.yaml")
+	err := run(suite.T(), suite.e2eConfig)
+	suite.Require().NoError(err, "run should not fail")
+
+	// Assure the output file is not empty.
+	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	suite.Require().NoError(err, "read output file should not fail")
+	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
+
+	// Assure that the optimization has been applied.
+	logEntryForSkippedTransmission := false
+	logEntryForAppliedMove := false
+	for _, record := range logRecords.Records() {
+		if strings.Contains(record.Entry.Message, logMessageForSkippedTransmission) {
+			logEntryForSkippedTransmission = true
+		}
+		if strings.Contains(record.Entry.Message, logMessageForAppliedMoveFileOptimization) {
+			logEntryForAppliedMove = true
+		}
+		suite.NotContains(record.Entry.Message, logMessageForFailedAppliedMoveFileOptimization)
+	}
+	suite.True(logEntryForSkippedTransmission, "should have found log entry for skipped transmission")
+	suite.True(logEntryForAppliedMove, "should have found log entry for applied optimization")
+}
+
+func (suite *featuresSuite) TestFileCopyOptimizationImageWorkspaceFile() {
+	const expectedLines = 32
+
+	logger, logRecords := zaprec.NewRecorder(zap.DebugLevel)
+	suite.e2eConfig.logger = logger
+
+	// Run.
+	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-image-workspace-file.yaml")
+	err := run(suite.T(), suite.e2eConfig)
+	suite.Require().NoError(err, "run should not fail")
+
+	// Assure the output file is not empty.
+	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	suite.Require().NoError(err, "read output file should not fail")
+	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
+
+	// Assure that the optimization has been applied.
+	logEntryForSkippedTransmission := false
+	logEntryForAppliedMove := false
+	for _, record := range logRecords.Records() {
+		if strings.Contains(record.Entry.Message, logMessageForSkippedTransmission) {
+			logEntryForSkippedTransmission = true
+		}
+		if strings.Contains(record.Entry.Message, logMessageForAppliedMoveFileOptimization) {
+			logEntryForAppliedMove = true
+		}
+		suite.NotContains(record.Entry.Message, logMessageForFailedAppliedMoveFileOptimization)
+	}
+	suite.True(logEntryForSkippedTransmission, "should have found log entry for skipped transmission")
+	suite.True(logEntryForAppliedMove, "should have found log entry for applied optimization")
+}
+
+func (suite *featuresSuite) TestFileCopyOptimizationProjectActionWorkspaceFile() {
+	const expectedLines = 32
+
+	logger, logRecords := zaprec.NewRecorder(zap.DebugLevel)
+	suite.e2eConfig.logger = logger
+
+	// Run.
+	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-proj-action-workspace-file.yaml")
+	err := run(suite.T(), suite.e2eConfig)
+	suite.Require().NoError(err, "run should not fail")
+
+	// Assure the output file is not empty.
+	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	suite.Require().NoError(err, "read output file should not fail")
+	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
+
+	// Assure that the optimization has been applied.
+	logEntryForSkippedTransmission := false
+	logEntryForAppliedMove := false
+	for _, record := range logRecords.Records() {
+		if strings.Contains(record.Entry.Message, logMessageForSkippedTransmission) {
+			logEntryForSkippedTransmission = true
+		}
+		if strings.Contains(record.Entry.Message, logMessageForAppliedMoveFileOptimization) {
+			logEntryForAppliedMove = true
+		}
+		suite.NotContains(record.Entry.Message, logMessageForFailedAppliedMoveFileOptimization)
+	}
+	suite.True(logEntryForSkippedTransmission, "should have found log entry for skipped transmission")
+	suite.True(logEntryForAppliedMove, "should have found log entry for applied optimization")
 }
 
 func TestFeatures(t *testing.T) {

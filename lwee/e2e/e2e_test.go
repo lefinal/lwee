@@ -17,6 +17,10 @@ type config struct {
 	command      string
 	contextDir   string
 	flowFilename string
+	// logger is an optional that the final log results are dumped to if set.
+	logger *zap.Logger
+	// keepTemporaryFiles for app.Config.
+	keepTemporaryFiles bool
 }
 
 func run(t *testing.T, config config) error {
@@ -33,13 +37,16 @@ func run(t *testing.T, config config) error {
 			records.DumpToLogger(logger)
 		}
 	})
+	if config.logger != nil {
+		defer records.DumpToLogger(config.logger)
+	}
 
 	err = app.Run(context.Background(), logger, nil, app.Config{
 		EngineType:         container.EngineTypeDocker,
 		Command:            config.command,
 		ContextDir:         config.contextDir,
 		FlowFilename:       config.flowFilename,
-		KeepTemporaryFiles: false,
+		KeepTemporaryFiles: config.keepTemporaryFiles,
 	})
 	if err != nil {
 		mehlog.LogToLevel(logger, zap.ErrorLevel, err)

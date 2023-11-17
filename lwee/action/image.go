@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/docker/go-connections/nat"
+	"github.com/lefinal/lwee/lwee/actionio"
 	"github.com/lefinal/lwee/lwee/container"
 	"github.com/lefinal/lwee/lwee/locator"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/lwee/lwee/lweestream"
 	"github.com/lefinal/meh"
+	"github.com/lefinal/meh/mehlog"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"io"
@@ -174,13 +176,31 @@ func (action *imageRunner) newStreamInputRequest(input lweeflowfile.ActionInputS
 }
 
 func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.ActionInputWorkspaceFile) inputIngestionRequestWithIngestor {
+	filename := path.Join(action.workspaceHostDir, input.Filename)
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
 			RequireFinishUntilPhase: PhasePreStart,
 			SourceName:              input.Source,
 		},
+		optimize: func(ctx context.Context, availableOptimizations *actionio.AvailableOptimizations) {
+			// If a file is available, we simply move it.
+			if availableOptimizations.Filename != "" {
+				action.logger.Debug("filename optimization available. moving file.",
+					zap.String("src", availableOptimizations.Filename),
+					zap.String("dst", filename))
+				err := actionio.ApplyFileCopyOptimization(availableOptimizations.Filename, filename)
+				if err != nil {
+					mehlog.LogToLevel(action.logger, zap.DebugLevel, meh.Wrap(err, "move file", meh.Details{
+						"src": availableOptimizations.Filename,
+						"dst": filename,
+					}))
+					action.logger.Debug("copy source regularly due to failed move")
+					return
+				}
+				availableOptimizations.SkipTransmission()
+			}
+		},
 		ingest: func(ctx context.Context, source io.Reader) error {
-			filename := path.Join(action.workspaceHostDir, input.Filename)
 			err := os.MkdirAll(path.Dir(filename), 0750)
 			if err != nil {
 				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
@@ -226,7 +246,7 @@ func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+		output: func(ctx context.Context, ready chan<- actionio.AlternativeSourceAccess, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for container running.
 			err := action.waitForContainerState(ctx, containerStateRunning)
@@ -244,7 +264,7 @@ func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
 			select {
 			case <-ctx.Done():
 				return meh.NewInternalErrFromErr(ctx.Err(), "notify output open", nil)
-			case ready <- struct{}{}:
+			case ready <- actionio.AlternativeSourceAccess{}:
 			}
 			// Forward.
 			_, err = io.Copy(writer, stdoutReader)
@@ -266,7 +286,7 @@ func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutput
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+		output: func(ctx context.Context, ready chan<- actionio.AlternativeSourceAccess, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			err := action.streamConnector.ReadOutputStream(ctx, output.StreamName, ready, writer)
 			if err != nil {
@@ -282,7 +302,7 @@ func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.Actio
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,
 		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+		output: func(ctx context.Context, ready chan<- actionio.AlternativeSourceAccess, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for container stopped.
 			err := action.waitForContainerState(ctx, containerStateDone)
@@ -295,7 +315,7 @@ func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.Actio
 			select {
 			case <-ctx.Done():
 				return meh.NewInternalErrFromErr(ctx.Err(), "notify output ready", nil)
-			case ready <- struct{}{}:
+			case ready <- actionio.AlternativeSourceAccess{Filename: filename}:
 			}
 			// Copy file.
 			f, err := os.Open(filename)

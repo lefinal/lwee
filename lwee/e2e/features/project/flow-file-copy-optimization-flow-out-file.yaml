@@ -1,0 +1,31 @@
+name: My file copy optimization flow for flow file output.
+description: This flow tests whether file copy optimizations are applied for flow outputs.
+in:
+actions:
+  textGen:
+    run:
+      type: proj-action
+      name: random-text
+      env:
+        LINES: "32"
+    out:
+      result:
+        providedAs: stdout
+  fileGen:
+    in:
+      data:
+        source: action.textGen.out.result
+        provideAs: workspace-file
+        filename: src
+    run:
+      type: proj-action
+      name: file-copy
+    out:
+      file:
+        providedAs: workspace-file
+        filename: dst
+out:
+  result:
+    source: action.fileGen.out.file
+    provideAs: file
+    filename: out/result.txt

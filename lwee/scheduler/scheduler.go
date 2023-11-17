@@ -9,8 +9,10 @@ import (
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/runinfo"
 	"github.com/lefinal/meh"
+	"github.com/lefinal/meh/mehlog"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"strings"
 	"sync"
 	"time"
 )
@@ -158,13 +160,27 @@ func (scheduler *Scheduler) schedule() {
 		for reschedule {
 			reschedule, err = scheduler.scheduleAction(scheduler.logger.Named("action").Named(logging.WrapName(scheduledAction.action.Name())), scheduledAction)
 			if err != nil {
-				scheduler.cancel(meh.Wrap(err, "schedule action", meh.Details{"action_name": scheduledAction.action.Name()}))
+				scheduler.fail(meh.Wrap(err, "schedule action", meh.Details{"action_name": scheduledAction.action.Name()}))
 			}
 		}
 	}
 	if scheduler.remainingActions == 0 {
 		scheduler.cancel(nil)
 	}
+}
+
+// failAndLog logs the given error to the logger. This is useful for making sure
+// that errors are really visible to the user do not get lost in consecutive
+// errors.
+func (scheduler *Scheduler) failAndLog(logger *zap.Logger, err error) {
+	if err != nil && !strings.HasSuffix(err.Error(), context.Canceled.Error()) {
+		mehlog.Log(logger, err)
+	}
+	scheduler.cancel(err)
+}
+
+func (scheduler *Scheduler) fail(err error) {
+	scheduler.failAndLog(scheduler.logger, err)
 }
 
 func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *scheduledAction) (bool, error) {
@@ -248,7 +264,7 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 			scheduler.runInfoRecorder.RecordActionStart(scheduledAction.action.Name(), scheduledAction.start)
 			done, err := scheduledAction.action.Start(scheduler.ctx)
 			if err != nil {
-				scheduler.cancel(meh.Wrap(err, fmt.Sprintf("start action %q", scheduledAction.action.Name()), nil))
+				scheduler.failAndLog(logger, meh.Wrap(err, fmt.Sprintf("start action %q", scheduledAction.action.Name()), nil))
 				return
 			}
 			defer func() { _ = scheduledAction.action.Stop(context.Background()) }()
@@ -291,7 +307,7 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 			})
 			err = eg.Wait()
 			if err != nil {
-				scheduler.cancel(meh.Wrap(err, fmt.Sprintf("run action %q", scheduledAction.action.Name()), nil))
+				scheduler.failAndLog(logger, meh.Wrap(err, fmt.Sprintf("run action %q", scheduledAction.action.Name()), nil))
 				return
 			}
 			logger.Debug("action done")
@@ -317,7 +333,7 @@ func (scheduler *Scheduler) Run() error {
 	go func() {
 		err := scheduler.readActionInputs(scheduler.ctx)
 		if err != nil {
-			scheduler.cancel(meh.Wrap(err, "read inputs", nil))
+			scheduler.fail(meh.Wrap(err, "read inputs", nil))
 			return
 		}
 	}()
@@ -359,10 +375,11 @@ func (scheduler *Scheduler) readActionInput(ctx context.Context, scheduledAction
 	logger := scheduler.logger.Named("action").Named(logging.WrapName(scheduledAction.action.Name())).
 		Named("input").Named(logging.WrapName(input.request.InputName))
 	// Wait for source ready.
+	var availableOptimizations *actionio.AvailableOptimizations
 	select {
 	case <-ctx.Done():
 		return meh.NewInternalErrFromErr(ctx.Err(), "wait for source ready", nil)
-	case <-input.source.Open:
+	case availableOptimizations = <-input.source.Open:
 	}
 	scheduler.m.Lock()
 	input.ready = true
@@ -371,7 +388,7 @@ func (scheduler *Scheduler) readActionInput(ctx context.Context, scheduledAction
 	scheduler.schedule()
 	// Ingest the actual input.
 	logger.Debug("input ingestion started")
-	err := scheduledAction.action.IngestInput(scheduler.ctx, input.request.InputName, input.source.Reader)
+	err := scheduledAction.action.IngestInput(scheduler.ctx, input.request.InputName, input.source.Reader, availableOptimizations)
 	if err != nil {
 		return meh.Wrap(err, "ingest input", nil)
 	}

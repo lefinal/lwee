@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"github.com/stretchr/testify/suite"
-	"io"
 	"pgregory.net/rapid"
 	"testing"
 )
@@ -45,12 +44,13 @@ func (suite *ioCopyToMultiWithStatsSuite) test() {
 	const readerCount = 5
 	// Prepare readers.
 	buffers := make([]bytes.Buffer, readerCount)
-	bufferWriters := make([]io.Writer, readerCount)
+	bufferWriters := make([]*ioCopyWriter, readerCount)
 	for i := range buffers {
-		bufferWriters[i] = &buffers[i]
+		bufferWriters[i] = newIOCopyWriter(&buffers[i])
 	}
 	// Write.
-	stats, err := ioCopyToMultiWithStats(bytes.NewReader(suite.data), suite.copyOptions, bufferWriters...)
+	copier := newIOMultiCopier(bytes.NewReader(suite.data), suite.copyOptions, bufferWriters)
+	stats, err := copier.copyToMultiWithStats()
 	suite.Require().NoError(err, "copy should not fail")
 	suite.Equal(len(suite.data), stats.written, "should have copied all data")
 	for i := range buffers {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/lefinal/lwee/lwee/actionio"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/meh"
 	"github.com/lefinal/meh/mehlog"
@@ -30,7 +31,7 @@ type Connector interface {
 	HasRegisteredIO() bool
 	ConnectAndVerify(ctx context.Context, host string, port string) error
 	WriteInputStream(ctx context.Context, streamName string, r io.Reader) error
-	ReadOutputStream(ctx context.Context, streamName string, ready chan<- struct{}, writer io.Writer) error
+	ReadOutputStream(ctx context.Context, streamName string, ready chan<- actionio.AlternativeSourceAccess, writer io.Writer) error
 	PipeIO(ctx context.Context) error
 }
 
@@ -262,7 +263,7 @@ func (c *connector) WriteInputStream(ctx context.Context, streamName string, r i
 
 // ReadOutputStream reads stream output from the target by making HTTP requests
 // and piping data according to the returned status code.
-func (c *connector) ReadOutputStream(ctx context.Context, streamName string, ready chan<- struct{}, writer io.Writer) error {
+func (c *connector) ReadOutputStream(ctx context.Context, streamName string, ready chan<- actionio.AlternativeSourceAccess, writer io.Writer) error {
 	logger := c.logger.Named("stream").Named("target-to-lwee").Named(logging.WrapName(streamName))
 	logger.Debug("read output stream")
 	start := time.Now()
@@ -307,7 +308,7 @@ func (c *connector) ReadOutputStream(ctx context.Context, streamName string, rea
 				select {
 				case <-ctx.Done():
 					return meh.NewInternalErrFromErr(ctx.Err(), "notify source open", nil)
-				case ready <- struct{}{}:
+				case ready <- actionio.AlternativeSourceAccess{}:
 				}
 				sourceOpened = true
 			}
@@ -415,7 +416,7 @@ func (c *connector) drainUnusedOutputStreams(ctx context.Context) error {
 				c.streamInputsOutputsCond.L.Unlock()
 				c.streamInputsOutputsCond.Broadcast()
 			}()
-			err := c.ReadOutputStream(ctx, streamName, make(chan struct{}, 1), io.Discard)
+			err := c.ReadOutputStream(ctx, streamName, make(chan actionio.AlternativeSourceAccess, 1), io.Discard)
 			if err != nil {
 				return meh.Wrap(err, "discard unused output stream", meh.Details{"stream_name": streamName})
 			}

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 )
 
@@ -46,13 +47,34 @@ func (lwee *LWEE) registerFlowInput(ctx context.Context, inputName string, flowI
 
 func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowOutput any) (flowOutput, error) {
 	var sourceName string
-	var sourceHandler func(ctx context.Context, logger *zap.Logger, source io.Reader) error
-	// Set handlers based on output type.
+	var sourceHandler func(ctx context.Context, logger *zap.Logger, source io.Reader, availableOptimizations *actionio.AvailableOptimizations) error
+	// Set handlers based on the output type.
 	switch flowOutput := flowOutput.(type) {
 	case lweeflowfile.FlowOutputFile:
 		sourceName = flowOutput.Source
-		sourceHandler = func(ctx context.Context, logger *zap.Logger, source io.Reader) error {
-			filename := path.Join(lwee.Locator.ContextDir(), flowOutput.Filename)
+		sourceHandler = func(ctx context.Context, logger *zap.Logger, source io.Reader, availableOptimizations *actionio.AvailableOptimizations) error {
+			filename := flowOutput.Filename
+			if !path.IsAbs(filename) {
+				filename = path.Join(lwee.Locator.ContextDir(), flowOutput.Filename)
+			}
+			// If a file is available, we simply move it.
+			if availableOptimizations.Filename != "" {
+				logger.Debug("filename optimization available. moving file.",
+					zap.String("src", availableOptimizations.Filename),
+					zap.String("dst", filename))
+				err := actionio.ApplyFileCopyOptimization(availableOptimizations.Filename, filename)
+				if err == nil {
+					availableOptimizations.SkipTransmission()
+					return nil
+				}
+				// Failed.
+				mehlog.LogToLevel(logger, zap.DebugLevel, meh.Wrap(err, "move file", meh.Details{
+					"src": availableOptimizations.Filename,
+					"dst": filename,
+				}))
+				logger.Debug("copy source regularly due to failed move")
+			}
+			// Copy file.
 			err := os.MkdirAll(path.Dir(filename), 0760)
 			if err != nil {
 				return meh.NewInternalErrFromErr(err, "mkdir all for output file", meh.Details{"dir": path.Dir(filename)})
@@ -84,16 +106,15 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 	return func(ctx context.Context) error {
 		logger := lwee.logger.Named("flow-output").Named(logging.WrapName(outputName)).
 			With(zap.String("source_name", sourceName))
-		// Wait for source opened.
+		// Wait for the source being opened.
 		logger.Debug("wait for source opened")
-		select {
-		case <-ctx.Done():
-			return meh.NewInternalErrFromErr(ctx.Err(), "wait for source opened", meh.Details{"source_name": sourceName})
-		case <-source.Open:
+		availableOptimizations, err := source.WaitForOpen(ctx)
+		if err != nil {
+			return meh.Wrap(err, "wait for source opened", nil)
 		}
 		logger.Debug("source open")
 		defer func() { _ = source.Reader.Close() }()
-		err := sourceHandler(ctx, logger, source.Reader)
+		err = sourceHandler(ctx, logger, source.Reader, availableOptimizations)
 		if err != nil {
 			return meh.Wrap(err, fmt.Sprintf("handle flow output %q", outputName), meh.Details{"source_name": sourceName})
 		}
@@ -120,9 +141,13 @@ func provideFileSource(ctx context.Context, filename string, sourceProvider acti
 		return meh.NewBadInputErrFromErr(err, "open source file", meh.Details{"filename": filename})
 	}
 	defer func() { _ = f.Close() }()
+	absFilename, err := filepath.Abs(filename)
+	if err != nil {
+		return meh.NewInternalErrFromErr(err, "get absolute filepath for filename", meh.Details{"filename": filename})
+	}
 	select {
 	case <-ctx.Done():
-	case sourceProvider.Open <- struct{}{}:
+	case sourceProvider.Open <- actionio.AlternativeSourceAccess{Filename: absFilename}:
 	}
 	_, err = io.Copy(sourceProvider.Writer, f)
 	if err != nil {

@@ -31,7 +31,7 @@ type Action interface {
 	Build(ctx context.Context) error
 	InputIngestionRequests() []InputIngestionRequest
 	OutputOffers() []OutputOffer
-	IngestInput(ctx context.Context, inputName string, data io.ReadCloser) error
+	IngestInput(ctx context.Context, inputName string, data io.ReadCloser, availableOptimizations *actionio.AvailableOptimizations) error
 	ProvideOutput(ctx context.Context, outputName string, writer actionio.SourceWriter) error
 	RunInfo(ctx context.Context) (map[string]string, error)
 	Start(ctx context.Context) (<-chan error, error)
@@ -50,9 +50,12 @@ type InputIngestionRequest struct {
 	SourceName              string
 }
 
+type OptimizeFunc func(ctx context.Context, availableOptimizations *actionio.AvailableOptimizations)
+
 type inputIngestionRequestWithIngestor struct {
-	request InputIngestionRequest
-	ingest  actionio.Ingestor
+	request  InputIngestionRequest
+	optimize OptimizeFunc
+	ingest   actionio.Ingestor
 }
 
 type OutputOffer struct {
@@ -87,10 +90,17 @@ func (base *Base) InputIngestionRequests() []InputIngestionRequest {
 	return requests
 }
 
-func (base *Base) IngestInput(ctx context.Context, inputName string, data io.ReadCloser) error {
+func (base *Base) IngestInput(ctx context.Context, inputName string, data io.ReadCloser, availableOptimizations *actionio.AvailableOptimizations) error {
 	ingestionRequest, ok := base.inputIngestionRequestsByInputName[inputName]
 	if !ok {
 		return meh.NewInternalErr("input ingestion request for unknown input", meh.Details{"input_name": inputName})
+	}
+	if ingestionRequest.optimize != nil {
+		ingestionRequest.optimize(ctx, availableOptimizations)
+	}
+	if availableOptimizations.IsTransmissionSkipped() {
+		_ = data.Close()
+		return nil
 	}
 	err := ingestionRequest.ingest(ctx, data)
 	if err != nil {

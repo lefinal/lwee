@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"github.com/lefinal/lwee/lwee/actionio"
 	"github.com/lefinal/lwee/lwee/commandassert"
 	"github.com/lefinal/lwee/lwee/logging"
 	"github.com/lefinal/lwee/lwee/lweeflowfile"
@@ -250,7 +251,7 @@ func (action *commandAction) newStdoutOutputOffer() OutputOfferWithOutputter {
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+		output: func(ctx context.Context, ready chan<- actionio.AlternativeSourceAccess, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			defer func() { _ = stdoutWriter.Close() }()
 			// Wait for command running.
@@ -271,7 +272,7 @@ func (action *commandAction) newStdoutOutputOffer() OutputOfferWithOutputter {
 			select {
 			case <-ctx.Done():
 				return meh.NewInternalErrFromErr(ctx.Err(), "notify output open", nil)
-			case ready <- struct{}{}:
+			case ready <- actionio.AlternativeSourceAccess{}:
 			}
 			// Forward.
 			start := time.Now()
@@ -292,7 +293,7 @@ func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.Act
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,
 		},
-		output: func(ctx context.Context, ready chan<- struct{}, writer io.WriteCloser) error {
+		output: func(ctx context.Context, ready chan<- actionio.AlternativeSourceAccess, writer io.WriteCloser) error {
 			defer func() { _ = writer.Close() }()
 			// Wait for command stopped.
 			err := action.waitForCommandState(ctx, commandStateDone)
@@ -305,7 +306,7 @@ func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.Act
 			select {
 			case <-ctx.Done():
 				return meh.NewInternalErrFromErr(ctx.Err(), "notify output ready", nil)
-			case ready <- struct{}{}:
+			case ready <- actionio.AlternativeSourceAccess{Filename: filename}:
 			}
 			// Copy file.
 			f, err := os.Open(filename)

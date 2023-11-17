@@ -1,0 +1,46 @@
+name: My file copy optimization flow for image file output.
+description: This flow tests whether file copy optimizations are applied for flow outputs.
+in:
+actions:
+  textGen:
+    run:
+      type: proj-action
+      name: random-text
+      env:
+        LINES: "32"
+    out:
+      result:
+        providedAs: stdout
+  fileGen:
+    in:
+      data:
+        source: action.textGen.out.result
+        provideAs: workspace-file
+        filename: src
+    run:
+      type: proj-action
+      name: file-copy
+    out:
+      file:
+        providedAs: workspace-file
+        filename: dst
+  printFile:
+    in:
+      data:
+        source: action.fileGen.out.file
+        provideAs: workspace-file
+        filename: src
+    run:
+      type: image
+      image: "busybox:1.36"
+      command:
+        - "cat"
+        - "/lwee/src"
+    out:
+      env:
+        providedAs: stdout
+out:
+  result:
+    source: action.printFile.out.env
+    provideAs: file
+    filename: out/result.txt
