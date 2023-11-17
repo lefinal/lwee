@@ -27,7 +27,7 @@ type podmanEngineClient struct {
 	stdinOnceWarning sync.Once
 }
 
-func NewPodmanEngine(connLifetime context.Context, logger *zap.Logger) (Engine, error) {
+func NewPodmanEngine(connLifetime context.Context, logger *zap.Logger, disableCleanup bool) (Engine, error) {
 	const podmanSocket = "unix:///run/podman/podman.sock"
 	podmanConn, err := bindings.NewConnection(connLifetime, podmanSocket)
 	if err != nil {
@@ -36,7 +36,7 @@ func NewPodmanEngine(connLifetime context.Context, logger *zap.Logger) (Engine, 
 	return newEngine(logger, &podmanEngineClient{
 		logger:     logger,
 		podmanConn: podmanConn,
-	}), nil
+	}, disableCleanup), nil
 }
 
 func (client *podmanEngineClient) imageExists(_ context.Context, imageTag string) (bool, error) {

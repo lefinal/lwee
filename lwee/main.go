@@ -51,7 +51,7 @@ func run(ctx context.Context) error {
 	verboseFlag := flag.Bool("v", false, "Enables debug log output.")
 	flowFilenameFlag := flag.String("f", "", "Flow file to use.")
 	projectDirFlag := flag.String("dir", "./", "Project directory to use.")
-	keepTemporaryFiles := flag.Bool("keep-temp", false, "When set, keeps temporary files and omits cleanup.")
+	disableCleanupFlag := flag.Bool("no-cleanup", false, "When set, keeps temporary files and omits container cleanup.")
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
 		fmt.Println()
@@ -83,11 +83,11 @@ func run(ctx context.Context) error {
 	}
 	appInput := &input.Stdin{}
 	err = app.Run(ctx, logger, appInput, app.Config{
-		EngineType:         container.EngineType(engineType),
-		Command:            commandName,
-		FlowFilename:       *flowFilenameFlag,
-		ContextDir:         *projectDirFlag,
-		KeepTemporaryFiles: *keepTemporaryFiles,
+		EngineType:     container.EngineType(engineType),
+		Command:        commandName,
+		FlowFilename:   *flowFilenameFlag,
+		ContextDir:     *projectDirFlag,
+		DisableCleanup: *disableCleanupFlag,
 	})
 	return err
 }

@@ -21,8 +21,10 @@ type Config struct {
 	ContextDir string
 	// FlowFilename to use. If not set, it will be generated with default values in
 	// Run.
-	FlowFilename       string
-	KeepTemporaryFiles bool
+	FlowFilename string
+	// DisableCleanup describes whether cleanup for files and containers should be
+	// disabled.
+	DisableCleanup bool
 }
 
 type command struct {

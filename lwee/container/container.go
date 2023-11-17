@@ -67,17 +67,17 @@ type Engine interface {
 	RunContainer(ctx context.Context, containerConfig Config) error
 }
 
-func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineType) (Engine, error) {
+func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineType, disableCleanup bool) (Engine, error) {
 	var engine Engine
 	var err error
 	switch engineType {
 	case EngineTypeDocker:
-		engine, err = NewDockerEngine(logger.Named("docker"))
+		engine, err = NewDockerEngine(logger.Named("docker"), disableCleanup)
 		if err != nil {
 			return nil, meh.Wrap(err, "new docker engine", nil)
 		}
 	case EngineTypePodman:
-		engine, err = NewPodmanEngine(lifetime, logger.Named("podman"))
+		engine, err = NewPodmanEngine(lifetime, logger.Named("podman"), disableCleanup)
 		if err != nil {
 			return nil, meh.Wrap(err, "new podman engine", nil)
 		}
@@ -127,10 +127,11 @@ func (container createdContainer) mehDetails() meh.Details {
 // engine wraps a client for avoiding duplicate code for common logic. This
 // includes extended error details or avoiding duplicate image builds.
 type engine struct {
-	logger     *zap.Logger
-	client     engineClient
-	wg         sync.WaitGroup
-	cleanUpper *cleanUpper
+	logger         *zap.Logger
+	client         engineClient
+	wg             sync.WaitGroup
+	cleanUpper     *cleanUpper
+	disableCleanup bool
 	// buildsInProgressByTag holds a map of tags that have ongoing builds. If another
 	// build is triggered for the same tag, it will be delayed until the first one is
 	// done and then start building. The reason for this is that duplicate builds for
@@ -145,11 +146,12 @@ type engine struct {
 	createdContainersByIDMutex sync.RWMutex
 }
 
-func newEngine(logger *zap.Logger, client engineClient) *engine {
+func newEngine(logger *zap.Logger, client engineClient, disableCleanup bool) *engine {
 	return &engine{
 		logger:                    logger,
 		client:                    client,
 		cleanUpper:                newCleanUpper(logger.Named("cleanup"), client),
+		disableCleanup:            disableCleanup,
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),
 		createdContainersByID:     map[string]createdContainer{},
@@ -157,9 +159,11 @@ func newEngine(logger *zap.Logger, client engineClient) *engine {
 }
 
 func (engine *engine) Start(ctx context.Context) error {
-	err := engine.cleanUpper.start(ctx)
-	if err != nil {
-		return meh.Wrap(err, "start clean-upper", nil)
+	if !engine.disableCleanup {
+		err := engine.cleanUpper.start(ctx)
+		if err != nil {
+			return meh.Wrap(err, "start clean-upper", nil)
+		}
 	}
 	return nil
 }

@@ -9,7 +9,7 @@ command:
 arguments:
     -f              Flow filename.
     -dir            The project directory.
-    -keep-temp      When set, keeps the temporary files and omits cleanup.
+    -no-cleanup     When set, keeps the temporary files and omits container cleanup.
     -v              Enabled debug log output.
 
 Examples:

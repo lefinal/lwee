@@ -19,7 +19,7 @@ func commandRun(ctx context.Context, logger *zap.Logger, _ input.Input, config C
 	}
 	// Start a new LWEE runner with configuration.
 	appLWEE, err := lwee.New(logger, flowFile, locator.Default(), lwee.Config{
-		KeepTemporaryFiles:  config.KeepTemporaryFiles,
+		DisableCleanup:      config.DisableCleanup,
 		ContainerEngineType: config.EngineType,
 	})
 	if err != nil {

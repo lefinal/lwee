@@ -19,8 +19,8 @@ type config struct {
 	flowFilename string
 	// logger is an optional that the final log results are dumped to if set.
 	logger *zap.Logger
-	// keepTemporaryFiles for app.Config.
-	keepTemporaryFiles bool
+	// disableCleanup for app.Config.
+	disableCleanup bool
 }
 
 func run(t *testing.T, config config) error {
@@ -42,11 +42,11 @@ func run(t *testing.T, config config) error {
 	}
 
 	err = app.Run(context.Background(), logger, nil, app.Config{
-		EngineType:         container.EngineTypeDocker,
-		Command:            config.command,
-		ContextDir:         config.contextDir,
-		FlowFilename:       config.flowFilename,
-		KeepTemporaryFiles: config.keepTemporaryFiles,
+		EngineType:     container.EngineTypeDocker,
+		Command:        config.command,
+		ContextDir:     config.contextDir,
+		FlowFilename:   config.flowFilename,
+		DisableCleanup: config.disableCleanup,
 	})
 	if err != nil {
 		mehlog.LogToLevel(logger, zap.ErrorLevel, err)

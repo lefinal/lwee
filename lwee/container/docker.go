@@ -32,7 +32,7 @@ type dockerEngineClient struct {
 }
 
 // NewDockerEngine creates a new docker Engine.
-func NewDockerEngine(logger *zap.Logger) (Engine, error) {
+func NewDockerEngine(logger *zap.Logger, disableCleanup bool) (Engine, error) {
 	dockerClient, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, meh.NewInternalErrFromErr(err, "new docker client", nil)
@@ -40,7 +40,7 @@ func NewDockerEngine(logger *zap.Logger) (Engine, error) {
 	return newEngine(logger, &dockerEngineClient{
 		logger:       logger,
 		dockerClient: dockerClient,
-	}), nil
+	}, disableCleanup), nil
 }
 
 func (client *dockerEngineClient) imageExists(ctx context.Context, imageTag string) (bool, error) {

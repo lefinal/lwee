@@ -23,7 +23,7 @@ import (
 
 type Config struct {
 	VerifyOnly          bool
-	KeepTemporaryFiles  bool
+	DisableCleanup      bool
 	ContainerEngineType container.EngineType
 }
 
@@ -76,7 +76,7 @@ func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locato
 func (lwee *LWEE) Run(ctx context.Context) error {
 	lwee.runInfoRecorder.RecordFlowName(lwee.flowFile.Name)
 	// Setup container engine.
-	containerEngine, err := container.NewEngine(ctx, lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType)
+	containerEngine, err := container.NewEngine(ctx, lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType, lwee.config.DisableCleanup)
 	if err != nil {
 		return meh.Wrap(err, "new container engine", meh.Details{"engine_type": lwee.config.ContainerEngineType})
 	}
@@ -146,7 +146,7 @@ func (lwee *LWEE) Run(ctx context.Context) error {
 	}
 	// Defer cleanup.
 	defer func() {
-		if lwee.config.KeepTemporaryFiles {
+		if lwee.config.DisableCleanup {
 			lwee.logger.Warn(fmt.Sprintf("keeping temporary files in %s", lwee.Locator.ActionTempDir()))
 		} else {
 			lwee.logger.Debug("delete temporary files", zap.String("action_temp_dir", lwee.Locator.ActionTempDir()))

@@ -14,7 +14,7 @@ import (
 // action. The user is asked for input regarding the action name.
 func commandCreateProjectAction(ctx context.Context, logger *zap.Logger, input input.Input, config Config) error {
 	// Create.
-	containerEngine, err := container.NewEngine(ctx, logger.Named("container-engine"), config.EngineType)
+	containerEngine, err := container.NewEngine(ctx, logger.Named("container-engine"), config.EngineType, config.DisableCleanup)
 	if err != nil {
 		return meh.Wrap(err, "create container engine", nil)
 	}
