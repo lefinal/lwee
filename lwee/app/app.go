@@ -59,7 +59,17 @@ func Run(ctx context.Context, logger *zap.Logger, input input.Input, config Conf
 	}
 	// Prepare command.
 	if config.Command == "" {
-		return meh.NewBadInputErr("missing command", nil)
+		commandNames := []string{
+			"run",
+			"verify",
+			"create-action",
+			"init",
+		}
+		_, selectedCommandName, err := input.RequestSelection(ctx, "No command provided. Select one", commandNames)
+		if err != nil {
+			return meh.Wrap(err, "request selection due to missing command", nil)
+		}
+		config.Command = selectedCommandName
 	}
 	commandToRun, ok := commands[config.Command]
 	if !ok {

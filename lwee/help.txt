@@ -1,12 +1,19 @@
-lwee [arguments] [command] [context directory]
+lwee [command] [arguments]
 
 command:
+    run             Run a workflow.
+    verify          Verifies the project with the flow file in the context directory.
     create-action   Creates the specified action.
     init            Initializes a new project in the context directory.
-    verify          Verifyies the project with the flow file in the context directory.
+
+arguments:
+    -f              Flow filename.
+    -dir            The project directory.
+    -keep-temp      When set, keeps the temporary files and omits cleanup.
+    -v              Enabled debug log output.
 
 Examples:
-    lwee init .
-    lwee init /tmp/my-project
-    lwee verify .
-    lwee verify -f other-flow.yaml .
+    lwee init
+    lwee init -dir /tmp/my-project
+    lwee verify
+    lwee verify -f other-flow.yaml

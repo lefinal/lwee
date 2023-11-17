@@ -50,6 +50,7 @@ func run(ctx context.Context) error {
 	// Parse flags.
 	verboseFlag := flag.Bool("v", false, "Enables debug log output.")
 	flowFilenameFlag := flag.String("f", "", "Flow file to use.")
+	projectDirFlag := flag.String("dir", "./", "Project directory to use.")
 	keepTemporaryFiles := flag.Bool("keep-temp", false, "When set, keeps temporary files and omits cleanup.")
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
@@ -58,11 +59,7 @@ func run(ctx context.Context) error {
 		fmt.Println("Arguments:")
 		flag.PrintDefaults()
 	}
-	if len(os.Args) < 3 {
-		flag.Usage()
-		return meh.NewBadInputErr("invalid usage", nil)
-	}
-	_ = flag.CommandLine.Parse(os.Args[2:])
+	flag.Parse()
 	// Set up logging.
 	logLevel := zap.InfoLevel
 	if *verboseFlag {
@@ -79,22 +76,17 @@ func run(ctx context.Context) error {
 	if !ok {
 		engineType = string(defaultEngineType)
 	}
-	// Extract command dir.
-	command := ""
+	// Use provided command name.
+	var commandName string
 	if len(os.Args) > 1 {
-		command = os.Args[1]
-	}
-	// Extract flow context dir.
-	flowContextDir := ""
-	if len(os.Args) > 2 {
-		flowContextDir = os.Args[len(os.Args)-1]
+		commandName = os.Args[1]
 	}
 	appInput := &input.Stdin{}
 	err = app.Run(ctx, logger, appInput, app.Config{
 		EngineType:         container.EngineType(engineType),
-		Command:            command,
+		Command:            commandName,
 		FlowFilename:       *flowFilenameFlag,
-		ContextDir:         flowContextDir,
+		ContextDir:         *projectDirFlag,
 		KeepTemporaryFiles: *keepTemporaryFiles,
 	})
 	return err
