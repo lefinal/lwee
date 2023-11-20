@@ -22,7 +22,9 @@ import (
 )
 
 type Config struct {
-	VerifyOnly          bool
+	VerifyOnly bool
+	// DisableCleanup describes whether cleanup for files and containers should be
+	// disabled.
 	DisableCleanup      bool
 	ContainerEngineType container.EngineType
 }

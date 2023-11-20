@@ -75,7 +75,7 @@ func (suite *actionIODataIntegritySuite) test(flowName string) {
 	e2eConfig := config{
 		command:      "run",
 		contextDir:   suite.contextDir,
-		flowFilename: path.Join(suite.contextDir, flowName),
+		flowFilename: flowName,
 	}
 	err = run(suite.T(), e2eConfig)
 	suite.Require().NoError(err, "should not fail")

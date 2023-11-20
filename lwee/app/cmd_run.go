@@ -2,26 +2,13 @@ package app
 
 import (
 	"context"
-	"github.com/lefinal/lwee/lwee/input"
-	"github.com/lefinal/lwee/lwee/locator"
-	"github.com/lefinal/lwee/lwee/lwee"
-	"github.com/lefinal/lwee/lwee/lweeflowfile"
 	"github.com/lefinal/meh"
-	"go.uber.org/zap"
 )
 
-func commandRun(ctx context.Context, logger *zap.Logger, _ input.Input, config Config) error {
-	// Parse flow.
-	flowFilename := locator.Default().FlowFilename()
-	flowFile, err := lweeflowfile.FromFile(flowFilename)
-	if err != nil {
-		return meh.Wrap(err, "flow from file", meh.Details{"flow_filename": flowFilename})
-	}
+// commandRun runs a workflow in the context directory.
+func commandRun(ctx context.Context, options commandOptions) error {
 	// Start a new LWEE runner with configuration.
-	appLWEE, err := lwee.New(logger, flowFile, locator.Default(), lwee.Config{
-		DisableCleanup:      config.DisableCleanup,
-		ContainerEngineType: config.EngineType,
-	})
+	appLWEE, err := newLWEEWithOptions(options)
 	if err != nil {
 		return meh.Wrap(err, "new lwee", nil)
 	}

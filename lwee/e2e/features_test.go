@@ -38,7 +38,7 @@ func (suite *featuresSuite) TearDownTest() {
 func (suite *featuresSuite) TestEnvWithProjectAction() {
 	const expect = "Hello World from Project Action Runner!\n"
 
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-env-proj-action.yaml")
+	suite.e2eConfig.flowFilename = "flow-env-proj-action.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "run should not fail")
 
@@ -73,7 +73,7 @@ func (suite *featuresSuite) TestEnvWithImageRunner() {
 	})
 
 	// Run.
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-env-image.yaml")
+	suite.e2eConfig.flowFilename = "flow-env-image.yaml"
 	err = run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "run should not fail")
 
@@ -90,7 +90,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationFlowOutputFile() {
 	suite.e2eConfig.logger = logger
 
 	// Run.
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-flow-out-file.yaml")
+	suite.e2eConfig.flowFilename = "flow-file-copy-optimization-flow-out-file.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "run should not fail")
 
@@ -122,7 +122,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationImageWorkspaceFile() {
 	suite.e2eConfig.logger = logger
 
 	// Run.
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-image-workspace-file.yaml")
+	suite.e2eConfig.flowFilename = "flow-file-copy-optimization-image-workspace-file.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "run should not fail")
 
@@ -154,7 +154,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationProjectActionWorkspaceFile()
 	suite.e2eConfig.logger = logger
 
 	// Run.
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-file-copy-optimization-proj-action-workspace-file.yaml")
+	suite.e2eConfig.flowFilename = "flow-file-copy-optimization-proj-action-workspace-file.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "run should not fail")
 

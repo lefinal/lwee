@@ -17,19 +17,56 @@ import (
 )
 
 const (
+	lweeDir    = "./.lwee"
 	sourcesDir = "./src"
 )
 
 const mkdirPerm = 0750
+const filePerm = 0644
 
-var defaultLocator *Locator
+// FindContextDir tries to locate an LWEE context directory in the given
+// directory or any of its parents. If an LWEE directory has been found, its
+// context path is returned. Otherwise, an error is returned.
+func FindContextDir(startDir string) (string, error) {
+	useAsContextDir := func(dir string) error {
+		locator, err := New(dir, "should-not-exist.yaml")
+		if err != nil {
+			return meh.Wrap(err, "new locator", nil)
+		}
+		err = locator.AssureLWEEProject()
+		if err != nil {
+			return meh.Wrap(err, "assure lwee project", nil)
+		}
+		return nil
+	}
 
-func Default() *Locator {
-	return defaultLocator
-}
-
-func SetDefault(locator *Locator) {
-	defaultLocator = locator
+	// Get absolute context dir.
+	startDir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", meh.Wrap(err, "get absolute path for start dir", meh.Details{"start_dir": startDir})
+	}
+	// Find in start directory or parents.
+	currentDir := startDir
+	var firstErr error
+	for {
+		err := useAsContextDir(currentDir)
+		if err == nil {
+			// Ok.
+			return currentDir, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		// Try parent directory.
+		if currentDir == "/" {
+			return "", meh.NewBadInputErr("cannot find lwee project in this or any parent directory", meh.Details{
+				"find_err":    firstErr.Error(),
+				"start_dir":   startDir,
+				"current_dir": currentDir,
+			})
+		}
+		currentDir = path.Dir(currentDir)
+	}
 }
 
 type Locator struct {
@@ -55,6 +92,16 @@ func New(contextDir string, flowFilename string) (*Locator, error) {
 		flowFilename:  flowFilename,
 		actionTempDir: actionTempDir,
 	}, nil
+}
+
+// AssureLWEEProject returns an error if the project is not an LWEE project. The
+// check is done by checking the LWEEDir for existence.
+func (locator *Locator) AssureLWEEProject() error {
+	_, err := os.Stat(locator.LWEEDir())
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (locator *Locator) FlowFilename() string {
@@ -92,6 +139,16 @@ func (locator *Locator) InitProject(logger *zap.Logger) error {
 	err = CreateIfNotExists(locator.flowFilename, defaults.FlowFile)
 	if err != nil {
 		return meh.Wrap(err, "create default flow file", meh.Details{"filename": locator.flowFilename})
+	}
+
+	// After all, create the LWEE directory.
+	err = os.MkdirAll(locator.LWEEDir(), mkdirPerm)
+	if err != nil {
+		return meh.NewBadInputErrFromErr(err, "create lwee directory", meh.Details{"dir": locator.LWEEDir()})
+	}
+	err = os.WriteFile(path.Join(locator.LWEEDir(), ".gitkeep"), nil, filePerm)
+	if err != nil {
+		return meh.NewBadInputErrFromErr(err, "create .gitkeep in lwee directory", meh.Details{"dir": locator.LWEEDir()})
 	}
 	return nil
 }
@@ -138,6 +195,10 @@ func CreateIfNotExists(filename string, content []byte) error {
 		return meh.NewBadInputErrFromErr(err, "close written file", nil)
 	}
 	return nil
+}
+
+func (locator *Locator) LWEEDir() string {
+	return path.Join(locator.contextDir, lweeDir)
 }
 
 func (locator *Locator) ActionTempDirByAction(actionName string) string {

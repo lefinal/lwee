@@ -14,12 +14,12 @@ func (suite *CycleDetectionSuite) SetupTest() {
 	suite.e2eConfig = config{
 		command:      "run",
 		contextDir:   "./cycle-detection/project",
-		flowFilename: "./cycle-detection/project/flow-non-cyclic.yaml",
+		flowFilename: "flow-non-cyclic.yaml",
 	}
 }
 
 func (suite *CycleDetectionSuite) TestCycle() {
-	suite.e2eConfig.flowFilename = "./cycle-detection/project/flow-cyclic.yaml"
+	suite.e2eConfig.flowFilename = "flow-cyclic.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().Error(err, "should fail")
 	suite.ErrorContains(err, "cycle")

@@ -16,7 +16,7 @@ func (suite *flowValidationSuite) SetupTest() {
 	suite.e2eConfig = config{
 		command:      "verify",
 		contextDir:   "./flow-validation/project",
-		flowFilename: "./flow-validation/project/flow-valid.yaml",
+		flowFilename: "flow-valid.yaml",
 	}
 }
 
@@ -25,25 +25,25 @@ func (suite *flowValidationSuite) TearDownTest() {
 }
 
 func (suite *flowValidationSuite) TestOK() {
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-valid.yaml")
+	suite.e2eConfig.flowFilename = "flow-valid.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.NoError(err, "should not fail")
 }
 
 func (suite *flowValidationSuite) TestInvalid1() {
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-invalid.yaml")
+	suite.e2eConfig.flowFilename = "flow-invalid.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Error(err, "should fail")
 }
 
 func (suite *flowValidationSuite) TestInvalid2() {
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-invalid-2.yaml")
+	suite.e2eConfig.flowFilename = "flow-invalid-2.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Error(err, "should fail")
 }
 
 func (suite *flowValidationSuite) TestWarnings() {
-	suite.e2eConfig.flowFilename = path.Join(suite.e2eConfig.contextDir, "flow-warnings.yaml")
+	suite.e2eConfig.flowFilename = "flow-warnings.yaml"
 	err := run(suite.T(), suite.e2eConfig)
 	suite.NoError(err, "should not fail")
 }
