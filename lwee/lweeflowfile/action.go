@@ -57,7 +57,6 @@ func (in *ActionInputs) UnmarshalJSON(data []byte) error {
 	var err error
 	*in, err = fileparse.ParseMapBasedOnType[ActionInputType, ActionInput](data, map[ActionInputType]fileparse.Unmarshaller[ActionInput]{
 		ActionInputTypeWorkspaceFile: fileparse.UnmarshallerFn[ActionInputWorkspaceFile](actionInputConstructor[ActionInputWorkspaceFile]),
-		ActionInputTypeFile:          fileparse.UnmarshallerFn[ActionInputFile](actionInputConstructor[ActionInputFile]),
 		ActionInputTypeStdin:         fileparse.UnmarshallerFn[ActionInputStdin](actionInputConstructor[ActionInputStdin]),
 		ActionInputTypeStream:        fileparse.UnmarshallerFn[ActionInputStream](actionInputConstructor[ActionInputStream]),
 	}, "provideAs")
@@ -97,31 +96,6 @@ func (input ActionInputWorkspaceFile) Type() string {
 }
 
 func (input ActionInputWorkspaceFile) Validate(path *validate.Path) *validate.Report {
-	reporter := validate.NewReporter()
-	reporter.AddReport(input.ActionInputBase.validate(path))
-	validate.ForField(reporter, path.Child("filename"), input.Filename,
-		validate.AssertNotEmpty[string]())
-	return reporter.Report()
-}
-
-type ActionInputFile struct {
-	ActionInputBase
-	Filename string `json:"filename"`
-}
-
-func (input ActionInputFile) Type() string {
-	return string(ActionInputTypeFile)
-}
-
-func (input ActionInputFile) Render(renderer *templaterender.Renderer) error {
-	err := renderer.RenderString(&input.Filename)
-	if err != nil {
-		return meh.Wrap(err, "render filename", nil)
-	}
-	return nil
-}
-
-func (input ActionInputFile) Validate(path *validate.Path) *validate.Report {
 	reporter := validate.NewReporter()
 	reporter.AddReport(input.ActionInputBase.validate(path))
 	validate.ForField(reporter, path.Child("filename"), input.Filename,

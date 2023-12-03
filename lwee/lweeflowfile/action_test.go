@@ -168,54 +168,6 @@ func TestActionInputWorkspaceFile_Validate(t *testing.T) {
 	}
 }
 
-func TestActionInputFile_Validate(t *testing.T) {
-	t.Parallel()
-
-	tests := []validateTest[ActionInputFile]{
-		{
-			name:   "ok",
-			valid:  true,
-			mutate: func(val *ActionInputFile) {},
-		},
-
-		{
-			name:  "base invalid",
-			valid: false,
-			mutate: func(val *ActionInputFile) {
-				val.Source = ""
-			},
-		},
-
-		{
-			name:  "filename name ok",
-			valid: true,
-			mutate: func(val *ActionInputFile) {
-				val.Filename = "my/file.txt"
-			},
-		},
-		{
-			name:  "filename not set",
-			valid: false,
-			mutate: func(val *ActionInputFile) {
-				val.Filename = ""
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.run(t, func() ActionInputFile {
-				return ActionInputFile{
-					ActionInputBase: ActionInputBase{
-						Source: "flow.in.hello",
-					},
-					Filename: "my/file.txt",
-				}
-			})
-		})
-	}
-}
-
 func TestActionInputStdin_Validate(t *testing.T) {
 	t.Parallel()
 
