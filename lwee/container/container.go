@@ -77,10 +77,7 @@ func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineTy
 			return nil, meh.Wrap(err, "new docker engine", nil)
 		}
 	case EngineTypePodman:
-		engine, err = NewPodmanEngine(lifetime, logger.Named("podman"), disableCleanup)
-		if err != nil {
-			return nil, meh.Wrap(err, "new podman engine", nil)
-		}
+		return nil, meh.NewBadInputErr("podman support was removed due to lacking features in the bindings", nil)
 	default:
 		return nil, meh.NewBadInputErr(fmt.Sprintf("unsupported engine type: %v", engineType), nil)
 	}
