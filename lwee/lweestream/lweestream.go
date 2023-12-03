@@ -264,6 +264,8 @@ func (c *connector) WriteInputStream(ctx context.Context, streamName string, r i
 // ReadOutputStream reads stream output from the target by making HTTP requests
 // and piping data according to the returned status code.
 func (c *connector) ReadOutputStream(ctx context.Context, streamName string, ready chan<- actionio.AlternativeSourceAccess, writer io.Writer) error {
+	const cooldown = 200 * time.Millisecond
+
 	logger := c.logger.Named("stream").Named("target-to-lwee").Named(logging.WrapName(streamName))
 	logger.Debug("read output stream")
 	start := time.Now()
@@ -285,23 +287,46 @@ func (c *connector) ReadOutputStream(ctx context.Context, streamName string, rea
 		return meh.NewInternalErrFromErr(err, "create request url", nil)
 	}
 	sourceOpened := false
+	requestNum := -1
+	// Use more complex closing of the response body so we can avoid large resource
+	// consumption while waiting for the output to open.
+	var response *http.Response
+	defer func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	}()
 	for {
+		requestNum++
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 		if err != nil {
 			return meh.NewInternalErrFromErr(err, "create http request", meh.Details{"req_url": reqUrl})
 		}
 		logger.Debug("request stream output from target", zap.String("req_url", reqUrl))
-		response, err := c.httpClient.Do(req)
+		response, err = c.httpClient.Do(req)
 		if err != nil {
 			return meh.NewInternalErrFromErr(err, "do http request", meh.Details{"req_url": reqUrl})
 		}
 		logger.Debug("got response", zap.String("status", response.Status), zap.Int("status_code", response.StatusCode))
-		defer func() { _ = response.Body.Close() }()
+		// Body closing is handled at the loop beginning and also deferred.
 		switch response.StatusCode {
 		case http.StatusAccepted:
-			// Nothing to do. We simply repeat the request as we currently expect the target
-			// to block until the output stream is ready. In the future we might introduce a
-			// cooldown delay that will be applied after the second request.
+			_ = response.Body.Close() // Avoid resource leak.
+			// Output stream is not ready yet. Retry with cooldown. However, if this is our
+			// first request, we skip the cooldown. The reason for this is that some clients
+			// might simply block until the output stream is ready and then return 202. We
+			// skip the first cooldown so that we can achieve near zero latencies.
+			if requestNum == 0 {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return meh.NewInternalErrFromErr(ctx.Err(), fmt.Sprintf("cooldown due to status %d", response.StatusCode), nil)
+			case <-time.After(cooldown):
+			}
 		case http.StatusOK:
 			// Forward data.
 			if !sourceOpened {
