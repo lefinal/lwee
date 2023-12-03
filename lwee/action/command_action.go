@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -196,7 +197,10 @@ func (action *commandAction) newWorkspaceFileInputRequest(input lweeflowfile.Act
 			SourceName:              input.Source,
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
-			filename := path.Join(action.workspaceDir, input.Filename)
+			filename := input.Filename
+			if !filepath.IsAbs(filename) {
+				filename = path.Join(action.workspaceDir, input.Filename)
+			}
 			err := os.MkdirAll(path.Dir(filename), 0750)
 			if err != nil {
 				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
