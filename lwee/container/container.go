@@ -127,7 +127,7 @@ type engine struct {
 	logger         *zap.Logger
 	client         engineClient
 	wg             sync.WaitGroup
-	cleanUpper     *cleanUpper
+	cleanUpper     cleanUpper
 	disableCleanup bool
 	// buildsInProgressByTag holds a map of tags that have ongoing builds. If another
 	// build is triggered for the same tag, it will be delayed until the first one is
@@ -144,10 +144,14 @@ type engine struct {
 }
 
 func newEngine(logger *zap.Logger, client engineClient, disableCleanup bool) *engine {
+	cleanUpper := newNopCleanUpper()
+	if !disableCleanup {
+		newCleanUpper(logger.Named("cleanup"), client)
+	}
 	return &engine{
 		logger:                    logger,
 		client:                    client,
-		cleanUpper:                newCleanUpper(logger.Named("cleanup"), client),
+		cleanUpper:                cleanUpper,
 		disableCleanup:            disableCleanup,
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),

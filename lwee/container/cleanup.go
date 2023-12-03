@@ -14,22 +14,47 @@ import (
 	"time"
 )
 
-type cleanUpper struct {
+type cleanUpper interface {
+	start(ctx context.Context) error
+	stop()
+	registerContainer(containerName string)
+}
+
+// nopCleanUpper is a cleanUpper that does nothing. Used for when cleanup is
+// disabled.
+type nopCleanUpper struct {
+}
+
+func newNopCleanUpper() nopCleanUpper {
+	return nopCleanUpper{}
+}
+
+func (c nopCleanUpper) start(_ context.Context) error {
+	return nil
+}
+
+func (c nopCleanUpper) stop() {
+}
+
+func (c nopCleanUpper) registerContainer(_ string) {
+}
+
+type clientCleanUpper struct {
 	logger *zap.Logger
 	client engineClient
 	conn   net.Conn
 	m      sync.Mutex
 }
 
-func newCleanUpper(logger *zap.Logger, client engineClient) *cleanUpper {
-	return &cleanUpper{
+func newCleanUpper(logger *zap.Logger, client engineClient) *clientCleanUpper {
+	return &clientCleanUpper{
 		logger: logger,
 		client: client,
 	}
 }
 
 // start
-func (c *cleanUpper) start(ctx context.Context) error {
+func (c *clientCleanUpper) start(ctx context.Context) error {
 	const retries = 10
 	const retryDelay = 100 * time.Millisecond
 	const ryukImage = "testcontainers/ryuk:0.5.1"
@@ -104,7 +129,7 @@ func (c *cleanUpper) start(ctx context.Context) error {
 	return nil
 }
 
-func (c *cleanUpper) stop() {
+func (c *clientCleanUpper) stop() {
 	c.m.Lock()
 	defer c.m.Unlock()
 	if c.conn != nil {
@@ -112,7 +137,7 @@ func (c *cleanUpper) stop() {
 	}
 }
 
-func (c *cleanUpper) registerContainer(containerName string) {
+func (c *clientCleanUpper) registerContainer(containerName string) {
 	if strings.ContainsAny(containerName, "&=") {
 		c.logger.Error("cannot register container with ryuk as container name involves invalid symbols",
 			zap.String("container_name", containerName))
