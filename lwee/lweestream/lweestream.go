@@ -298,7 +298,7 @@ func (c *connector) ReadOutputStream(ctx context.Context, streamName string, rea
 		logger.Debug("got response", zap.String("status", response.Status), zap.Int("status_code", response.StatusCode))
 		defer func() { _ = response.Body.Close() }()
 		switch response.StatusCode {
-		case http.StatusTooEarly:
+		case http.StatusAccepted:
 			// Nothing to do. We simply repeat the request as we currently expect the target
 			// to block until the output stream is ready. In the future we might introduce a
 			// cooldown delay that will be applied after the second request.

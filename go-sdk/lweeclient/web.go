@@ -208,7 +208,7 @@ func (s *server) handleRequestOutputStream() handlerFunc {
 				stream.stateCond.Wait()
 			}
 			stream.stateCond.L.Unlock()
-			c.Status(http.StatusTooEarly)
+			c.Status(http.StatusAccepted)
 			return nil
 		case outputStreamStateOpen:
 			// Forward data.
