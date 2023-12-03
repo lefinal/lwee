@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +76,11 @@ func (action *imageRunner) registerInputIngestionRequests() error {
 				return meh.Wrap(err, "new stream input request", meh.Details{"input_name": inputName})
 			}
 		case lweeflowfile.ActionInputWorkspaceFile:
-			inputRequest = action.newWorkspaceFileInputRequest(input)
+			var err error
+			inputRequest, err = action.newWorkspaceFileInputRequest(input)
+			if err != nil {
+				return meh.Wrap(err, "new workspace file input request", meh.Details{"input_name": inputName})
+			}
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action input %q has unsupported type: %s", inputName, input.Type()), nil)
 		}
@@ -104,7 +109,11 @@ func (action *imageRunner) registerOutputProviders() error {
 				return meh.Wrap(err, "new stream output offer", meh.Details{"output_name": outputName})
 			}
 		case lweeflowfile.ActionOutputWorkspaceFile:
-			outputOffer = action.newWorkspaceFileOutputOffer(output)
+			var err error
+			outputOffer, err = action.newWorkspaceFileOutputOffer(output)
+			if err != nil {
+				return meh.Wrap(err, "new workspace file output offer", meh.Details{"output_name": outputName})
+			}
 		default:
 			return meh.NewBadInputErr(fmt.Sprintf("action output %s has unsupported type: %s", outputName, output.Type()), nil)
 		}
@@ -175,7 +184,10 @@ func (action *imageRunner) newStreamInputRequest(input lweeflowfile.ActionInputS
 	}, nil
 }
 
-func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.ActionInputWorkspaceFile) inputIngestionRequestWithIngestor {
+func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.ActionInputWorkspaceFile) (inputIngestionRequestWithIngestor, error) {
+	if filepath.IsAbs(input.Filename) {
+		return inputIngestionRequestWithIngestor{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": input.Filename})
+	}
 	filename := path.Join(action.workspaceHostDir, input.Filename)
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
@@ -220,7 +232,7 @@ func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.Actio
 			}
 			return nil
 		},
-	}
+	}, nil
 }
 
 func (action *imageRunner) waitForContainerState(ctx context.Context, state containerState) error {
@@ -297,7 +309,11 @@ func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutput
 	}, nil
 }
 
-func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) OutputOfferWithOutputter {
+func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) (OutputOfferWithOutputter, error) {
+	if filepath.IsAbs(output.Filename) {
+		return OutputOfferWithOutputter{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": output.Filename})
+	}
+	filename := path.Join(action.workspaceHostDir, output.Filename)
 	return OutputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,
@@ -309,7 +325,6 @@ func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.Actio
 			if err != nil {
 				return meh.Wrap(err, "wait for container done", nil)
 			}
-			filename := path.Join(action.workspaceHostDir, output.Filename)
 			action.logger.Debug("container done. now providing workspace file output.",
 				zap.String("filename", filename))
 			select {
@@ -331,7 +346,7 @@ func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.Actio
 			}
 			return nil
 		},
-	}
+	}, nil
 }
 
 func (action *imageRunner) setContainerState(newState containerState) {
