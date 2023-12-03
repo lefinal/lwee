@@ -67,7 +67,7 @@ type Engine interface {
 	RunContainer(ctx context.Context, containerConfig Config) error
 }
 
-func NewEngine(lifetime context.Context, logger *zap.Logger, engineType EngineType, disableCleanup bool) (Engine, error) {
+func NewEngine(logger *zap.Logger, engineType EngineType, disableCleanup bool) (Engine, error) {
 	var engine Engine
 	var err error
 	switch engineType {

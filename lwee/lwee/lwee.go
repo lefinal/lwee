@@ -78,7 +78,7 @@ func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locato
 func (lwee *LWEE) Run(ctx context.Context) error {
 	lwee.runInfoRecorder.RecordFlowName(lwee.flowFile.Name)
 	// Setup container engine.
-	containerEngine, err := container.NewEngine(ctx, lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType, lwee.config.DisableCleanup)
+	containerEngine, err := container.NewEngine(lwee.logger.Named("container-engine"), lwee.config.ContainerEngineType, lwee.config.DisableCleanup)
 	if err != nil {
 		return meh.Wrap(err, "new container engine", meh.Details{"engine_type": lwee.config.ContainerEngineType})
 	}

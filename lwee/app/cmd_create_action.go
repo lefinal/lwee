@@ -12,7 +12,7 @@ import (
 func commandCreateProjectAction(ctx context.Context, options commandOptions) error {
 	logger := options.Logger
 	// Create.
-	containerEngine, err := container.NewEngine(ctx, logger.Named("container-engine"), options.LWEEConfig.ContainerEngineType, options.LWEEConfig.DisableCleanup)
+	containerEngine, err := container.NewEngine(logger.Named("container-engine"), options.LWEEConfig.ContainerEngineType, options.LWEEConfig.DisableCleanup)
 	if err != nil {
 		return meh.Wrap(err, "create container engine", nil)
 	}
