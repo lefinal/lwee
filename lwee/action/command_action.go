@@ -304,7 +304,10 @@ func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.Act
 			if err != nil {
 				return meh.Wrap(err, "wait for command done", nil)
 			}
-			filename := path.Join(action.workspaceDir, output.Filename)
+			filename := output.Filename
+			if !filepath.IsAbs(filename) {
+				filename = path.Join(action.workspaceDir, output.Filename)
+			}
 			action.logger.Debug("command done. now providing workspace file output.",
 				zap.String("filename", filename))
 			select {
