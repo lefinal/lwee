@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"time"
 )
 
@@ -33,7 +32,7 @@ func (lwee *LWEE) registerFlowInput(ctx context.Context, inputName string, flowI
 			return meh.Wrap(err, "check file", meh.Details{"filename": filename})
 		}
 		go func() {
-			err := provideFileSource(ctx, filename, sourceProvider)
+			err := provideFlowFileSource(ctx, filename, sourceProvider)
 			if err != nil {
 				mehlog.Log(sourceLogger, meh.Wrap(err, "provide file source", meh.Details{"filename": filename}))
 				return
@@ -134,20 +133,19 @@ func assureFileExists(filename string) error {
 	return nil
 }
 
-func provideFileSource(ctx context.Context, filename string, sourceProvider actionio.SourceWriter) error {
+func provideFlowFileSource(ctx context.Context, filename string, sourceProvider actionio.SourceWriter) error {
 	defer func() { _ = sourceProvider.Writer.Close() }()
 	f, err := os.Open(filename)
 	if err != nil {
 		return meh.NewBadInputErrFromErr(err, "open source file", meh.Details{"filename": filename})
 	}
 	defer func() { _ = f.Close() }()
-	absFilename, err := filepath.Abs(filename)
-	if err != nil {
-		return meh.NewInternalErrFromErr(err, "get absolute filepath for filename", meh.Details{"filename": filename})
-	}
+	// Open. However, we do not provide an alternative access to the file as this
+	// might lead to optimizations where the file is moved instead of being copied.
+	// As we want to keep flow inputs, this is not an option here.
 	select {
 	case <-ctx.Done():
-	case sourceProvider.Open <- actionio.AlternativeSourceAccess{Filename: absFilename}:
+	case sourceProvider.Open <- actionio.AlternativeSourceAccess{}:
 	}
 	_, err = io.Copy(sourceProvider.Writer, f)
 	if err != nil {

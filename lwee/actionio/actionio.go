@@ -58,7 +58,9 @@ type sourceWriter struct {
 
 type AlternativeSourceAccess struct {
 	// Filename is a non-empty string if the source data is also available as file at
-	// the specified location.
+	// the specified location. Keep in mind that there might be an optimization where
+	// the file is moved, so do not provide Filename, if you need the file to be
+	// persisted like in flow inputs.
 	Filename string
 }
 
