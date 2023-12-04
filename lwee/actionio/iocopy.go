@@ -109,7 +109,9 @@ func newBufferForReader(src io.Reader, bufferSize int) []byte {
 	return make([]byte, bufferSize)
 }
 
+// CopyOptions represents options for copying data.
 type CopyOptions struct {
+	// CopyBufferSize is the buffer size for data.
 	CopyBufferSize int
 }
 

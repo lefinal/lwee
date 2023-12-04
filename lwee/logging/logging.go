@@ -1,3 +1,4 @@
+// Package logging provides centralized logging functionality.
 package logging
 
 import (
@@ -104,6 +105,7 @@ func SetLogger(newLogger *zap.Logger) {
 	logger = newLogger
 }
 
+// WrapName wraps the given name in angle brackets.
 func WrapName(name string) string {
 	return fmt.Sprintf("<%s>", name)
 }

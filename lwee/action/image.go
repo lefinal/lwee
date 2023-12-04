@@ -31,13 +31,9 @@ const (
 	containerStateDone
 )
 
-type Image struct {
-	ContextDir    string
-	ImageFilename string
-}
-
+// imageRunner runs a container image.
 type imageRunner struct {
-	*Base
+	*base
 	containerEngine   container.Engine
 	imageTag          string
 	command           []string
@@ -93,7 +89,7 @@ func (action *imageRunner) registerInputIngestionRequests() error {
 func (action *imageRunner) registerOutputProviders() error {
 	stdoutOutputRegistered := false
 	for outputName, output := range action.fileActionOutputs {
-		var outputOffer OutputOfferWithOutputter
+		var outputOffer outputOfferWithOutputter
 		switch output := output.(type) {
 		case lweeflowfile.ActionOutputStdout:
 			// Assure only one output with stdout-type.
@@ -253,8 +249,8 @@ func (action *imageRunner) waitForContainerState(ctx context.Context, state cont
 	return nil
 }
 
-func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
-	return OutputOfferWithOutputter{
+func (action *imageRunner) newStdoutOutputOffer() outputOfferWithOutputter {
+	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
@@ -289,12 +285,12 @@ func (action *imageRunner) newStdoutOutputOffer() OutputOfferWithOutputter {
 	}
 }
 
-func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutputStream) (OutputOfferWithOutputter, error) {
+func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutputStream) (outputOfferWithOutputter, error) {
 	err := action.streamConnector.RegisterStreamOutputRequest(output.StreamName)
 	if err != nil {
-		return OutputOfferWithOutputter{}, meh.Wrap(err, "register stream output request at connector", meh.Details{"stream_name": output.StreamName})
+		return outputOfferWithOutputter{}, meh.Wrap(err, "register stream output request at connector", meh.Details{"stream_name": output.StreamName})
 	}
-	return OutputOfferWithOutputter{
+	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
@@ -309,12 +305,12 @@ func (action *imageRunner) newStreamOutputOffer(output lweeflowfile.ActionOutput
 	}, nil
 }
 
-func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) (OutputOfferWithOutputter, error) {
+func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) (outputOfferWithOutputter, error) {
 	if filepath.IsAbs(output.Filename) {
-		return OutputOfferWithOutputter{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": output.Filename})
+		return outputOfferWithOutputter{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": output.Filename})
 	}
 	filename := path.Join(action.workspaceHostDir, output.Filename)
-	return OutputOfferWithOutputter{
+	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,
 		},

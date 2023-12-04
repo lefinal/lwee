@@ -1,3 +1,4 @@
+// Package main is the base package for running the application.
 package main
 
 import (

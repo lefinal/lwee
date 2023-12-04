@@ -150,7 +150,7 @@ func (s *server) serve(ctx context.Context) error {
 	return nil
 }
 
-// handleGetIO handles an HTTP request for the I/O summary. It returns a list of
+// handleGetIO handles an HTTP request for the IO summary. It returns a list of
 // requested input streams and provided output streams.
 func (s *server) handleGetIO() handlerFunc {
 	return func(c *gin.Context) error {

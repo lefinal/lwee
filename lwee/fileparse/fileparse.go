@@ -1,3 +1,6 @@
+// Package fileparse is used for parsing flow files or any others. It supports
+// helpers like ParseBasedOnType which are frequently used throughout the
+// project.
 package fileparse
 
 import (
@@ -6,10 +9,8 @@ import (
 	"github.com/lefinal/meh"
 )
 
-type typeBase[T any] struct {
-	Type T `json:"type"`
-}
-
+// UnmarshallerFn is a higher-order function that creates a JSON Unmarshaller
+// function for a specific type.
 func UnmarshallerFn[T any, S any](constructorFn func(t T) S) Unmarshaller[S] {
 	return func(data []byte) (S, error) {
 		var t T
@@ -18,8 +19,14 @@ func UnmarshallerFn[T any, S any](constructorFn func(t T) S) Unmarshaller[S] {
 	}
 }
 
+// Unmarshaller is a generic type alias for a function that unmarshals JSON data
+// into a value of type S.
 type Unmarshaller[S any] func(data []byte) (S, error)
 
+// ParseMapBasedOnType parses a JSON map based on a specified type field name,
+// using the provided type mapping to create the corresponding values. It returns
+// a map where the values are the parsed objects of type S. If an error occurs
+// during parsing or if a type is not supported, it returns an error.
 func ParseMapBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmarshaller[S], typeFieldName string) (map[string]S, error) {
 	m := make(map[string]S)
 	// Parse raw JSON.
@@ -38,6 +45,10 @@ func ParseMapBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmars
 	return m, nil
 }
 
+// ParseBasedOnType is a function that parses JSON data based on the type field.
+// It accepts the JSON data, a mapping of type name to Unmarshaller, and the type
+// field name. It returns the parsed object of the corresponding type and an
+// error if any.
 func ParseBasedOnType[T ~string, S any](data []byte, typeMapping map[T]Unmarshaller[S], typeFieldName string) (S, error) {
 	var s S
 	var raw map[string]any

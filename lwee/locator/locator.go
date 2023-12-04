@@ -1,3 +1,5 @@
+// Package locator centralizes locating directories and files into a single
+// Locator that can use a configured context directory.
 package locator
 
 import (
@@ -69,12 +71,14 @@ func FindContextDir(startDir string) (string, error) {
 	}
 }
 
+// Locator provides a centralized way of locating files within a project.
 type Locator struct {
 	contextDir    string
 	flowFilename  string
 	actionTempDir string
 }
 
+// New creates a new Locator.
 func New(contextDir string, flowFilename string) (*Locator, error) {
 	_, err := os.Stat(contextDir)
 	if err != nil {
@@ -104,14 +108,22 @@ func (locator *Locator) AssureLWEEProject() error {
 	return nil
 }
 
+// FlowFilename returns the flow filename associated with the Locator.
 func (locator *Locator) FlowFilename() string {
 	return locator.flowFilename
 }
 
+// ContextDir returns the context directory path.
 func (locator *Locator) ContextDir() string {
 	return locator.contextDir
 }
 
+// InitProject creates the necessary directories and files for a new project.
+//
+// It first creates the actions directory and ensures it is empty. Then it
+// creates the sources directory and ensures it is empty. After that, it creates
+// the flow file if it does not already exist. Finally, it creates the LWEE
+// directory and ensures it contains a .gitkeep file.
 func (locator *Locator) InitProject(logger *zap.Logger) error {
 	// Create actions directory.
 	actionsDir := path.Join(locator.contextDir, actionsDir)
@@ -153,6 +165,9 @@ func (locator *Locator) InitProject(logger *zap.Logger) error {
 	return nil
 }
 
+// CreateDirIfNotExists checks if a directory exists. If it does not, it creates
+// the directory. If the file descriptor already exists and is a file, it returns
+// an error.
 func CreateDirIfNotExists(dir string) error {
 	info, err := os.Stat(dir)
 	if err == nil {
@@ -170,6 +185,8 @@ func CreateDirIfNotExists(dir string) error {
 	return nil
 }
 
+// CreateIfNotExists checks if a file exists and creates it if not. If the file
+// already exists, it does not perform any action and returns nil.
 func CreateIfNotExists(filename string, content []byte) error {
 	err := CreateDirIfNotExists(path.Dir(filename))
 	if err != nil {
@@ -197,30 +214,41 @@ func CreateIfNotExists(filename string, content []byte) error {
 	return nil
 }
 
+// LWEEDir returns the path to the LWEE directory within the project.
 func (locator *Locator) LWEEDir() string {
 	return path.Join(locator.contextDir, lweeDir)
 }
 
+// ActionTempDirByAction returns the temporary directory path for a specific
+// action. Make sure to create it yourself.
 func (locator *Locator) ActionTempDirByAction(actionName string) string {
 	return path.Join(locator.actionTempDir, ToAlphanumeric(actionName, '_'))
 }
 
+// ActionTempDir returns the action temporary directory.
 func (locator *Locator) ActionTempDir() string {
 	return locator.actionTempDir
 }
 
+// ActionWorkspaceDirByAction returns the workspace directory for a specific
+// action. Make sure to create it yourself.
 func (locator *Locator) ActionWorkspaceDirByAction(actionName string) string {
 	return path.Join(locator.ActionTempDirByAction(actionName), "workspace")
 }
 
+// ContainerWorkspaceMountDir returns the path of the directory to mount as the
+// workspace directory in the container.
 func (locator *Locator) ContainerWorkspaceMountDir() string {
 	return "/lwee"
 }
 
+// RunInfoYAMLFilename returns the path to the run info file within the project.
 func (locator *Locator) RunInfoYAMLFilename() string {
 	return path.Join(locator.contextDir, "out", "run-info.yaml")
 }
 
+// gitKeepDir creates a .gitkeep file in the specified directory if it does not
+// exist.
 func gitKeepDir(dir string) error {
 	gitKeepFilename := path.Join(dir, ".gitkeep")
 	err := CreateIfNotExists(gitKeepFilename, []byte{})
@@ -230,6 +258,8 @@ func gitKeepDir(dir string) error {
 	return nil
 }
 
+// ToAlphanumeric replaces all non-alphanumeric characters in a string with the
+// provided replacement rune. It returns the modified string.
 func ToAlphanumeric(str string, replaceOthersWith rune) string {
 	var out strings.Builder
 	for _, r := range str {

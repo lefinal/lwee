@@ -126,7 +126,7 @@ func (g *tarjanGraph) strongConnect(current node) {
 	g.S = append(g.S, current)
 
 	// Check all outgoing connections from this node.
-	for follower, _ := range g.nodeConnections[current] {
+	for follower := range g.nodeConnections[current] {
 		// Check if already encountered.
 		if _, ok := g.indexByNode[follower]; !ok {
 			// Not encountered yet. Check also for the follower and update the low-link
@@ -164,7 +164,7 @@ func (g *tarjanGraph) strongConnect(current node) {
 // detectCycles returns all detected cycles with their all involved nodes. Don't
 // call this function multiple times.
 func (g *tarjanGraph) detectCycles() [][]node {
-	for v, _ := range g.nodeConnections {
+	for v := range g.nodeConnections {
 		if _, exists := g.indexByNode[v]; !exists {
 			g.strongConnect(v)
 		}

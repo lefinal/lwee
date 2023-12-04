@@ -1,3 +1,6 @@
+// Package validate is for entity validation. It provides a Report that contains
+// warnings and errors during validation as well as helper methods in the form of
+// Assertion.
 package validate
 
 import (
@@ -8,6 +11,7 @@ import (
 	"time"
 )
 
+// Path represents the path from some root to a field.
 type Path = field.Path
 
 // Assertion returns a non-empty error message if the given value does not

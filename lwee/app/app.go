@@ -1,3 +1,4 @@
+// Package app provides CLI functionality for LWEE.
 package app
 
 import (

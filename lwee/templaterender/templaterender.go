@@ -1,3 +1,4 @@
+// Package templaterender allows rendering templates using Renderer.
 package templaterender
 
 import (
@@ -7,24 +8,31 @@ import (
 	"html/template"
 )
 
+// Data holds flow and action data and is used as data when rendering templates
+// with Renderer.
 type Data struct {
 	Flow   FlowData
 	Action ActionData
 }
 
+// FlowData for usage in Data.Flow.
 type FlowData struct {
 	Raw map[string]any
 }
 
+// ActionData for usage in Data.Action.
 type ActionData struct {
 	Name   string
 	Extras any
 }
 
+// Renderer allows rendering templates. Create one with New and use methods like
+// Renderer.RenderString.
 type Renderer struct {
 	data Data
 }
 
+// New creates a new Renderer.
 func New(data Data) *Renderer {
 	return &Renderer{
 		data: data,
@@ -59,6 +67,9 @@ func (filler *Renderer) render(str *string) error {
 	return nil
 }
 
+// RenderString renders the provided string template using the Renderer's data.
+// It modifies the input string pointer in-place. If rendering fails, an error is
+// returned.
 func (filler *Renderer) RenderString(str *string) error {
 	err := filler.render(str)
 	if err != nil {
@@ -67,6 +78,15 @@ func (filler *Renderer) RenderString(str *string) error {
 	return nil
 }
 
+// RenderStrings renders the provided string list using the Renderer's data. It
+// modifies the input list in-place, replacing each element with its rendered
+// value. If rendering fails for any element, an error is returned. Example
+// usage:
+//
+//	err := renderer.RenderStrings(runner.Command)
+//	if err != nil {
+//	  return meh.Wrap(err, "render command", nil)
+//	}
 func (filler *Renderer) RenderStrings(strList []string) error {
 	for i, str := range strList {
 		str := str
@@ -83,6 +103,9 @@ func (filler *Renderer) RenderStrings(strList []string) error {
 	return nil
 }
 
+// RenderStringStringMap renders the values in the provided string map using the
+// Renderer's data. It modifies the values of the input map in-place. If
+// rendering fails for any value, an error is returned.
 func (filler *Renderer) RenderStringStringMap(m map[string]string) error {
 	for k, v := range m {
 		str := v

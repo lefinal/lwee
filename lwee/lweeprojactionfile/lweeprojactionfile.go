@@ -1,3 +1,5 @@
+// Package lweeprojactionfile holds relevant data structures and parsing methods
+// for project actions in LWEE.
 package lweeprojactionfile
 
 import (
@@ -9,16 +11,23 @@ import (
 	"strings"
 )
 
+// ProjActionType describes the type of project action. Currently, only
+// ProjActionTypeImage is supported.
 type ProjActionType string
 
 const (
+	// ProjActionTypeImage for ProjActionConfigImage.
 	ProjActionTypeImage ProjActionType = "image"
 )
 
+// ProjAction is the provided information of a project action. This is the
+// action.yaml file in a project action's directory.
 type ProjAction struct {
 	Configs ProjActionConfigs `json:"configs"`
 }
 
+// ProjActionConfig provides useful information for further handling of a project
+// action.
 type ProjActionConfig interface {
 	Type() string
 }
@@ -27,8 +36,11 @@ func projActionConfigConstructor[T ProjActionConfig](t T) ProjActionConfig {
 	return t
 }
 
+// ProjActionConfigs is a map of ProjActionConfig that uses custom JSON
+// unmarshalling logic based on the config's type.
 type ProjActionConfigs map[string]ProjActionConfig
 
+// UnmarshalJSON parses the JSON data as ProjActionConfigs based on their type.
 func (config *ProjActionConfigs) UnmarshalJSON(data []byte) error {
 	var err error
 	*config, err = fileparse.ParseMapBasedOnType[ProjActionType, ProjActionConfig](data, map[ProjActionType]fileparse.Unmarshaller[ProjActionConfig]{
@@ -40,14 +52,17 @@ func (config *ProjActionConfigs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ProjActionConfigImage describes a containerized project action.
 type ProjActionConfigImage struct {
 	File string `json:"file"`
 }
 
+// Type of ProjActionConfigImage.
 func (config ProjActionConfigImage) Type() string {
 	return string(ProjActionTypeImage)
 }
 
+// ParseAction parses the given JSON data as ProjAction.
 func ParseAction(rawAction json.RawMessage) (ProjAction, error) {
 	var action ProjAction
 	err := json.Unmarshal(rawAction, &action)
@@ -57,6 +72,8 @@ func ParseAction(rawAction json.RawMessage) (ProjAction, error) {
 	return action, nil
 }
 
+// FromFile reads the project action config from the given file and parses it as
+// ProjAction.
 func FromFile(filename string) (ProjAction, error) {
 	// Read file contents.
 	rawAction, err := os.ReadFile(filename)

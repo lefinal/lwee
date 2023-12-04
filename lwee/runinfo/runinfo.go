@@ -1,3 +1,5 @@
+// Package runinfo handles gathering workflow run information for future
+// inspection or analysis.
 package runinfo
 
 import (
@@ -14,19 +16,28 @@ import (
 	"time"
 )
 
+// Duration is a type for time.Duration which marshals to YAML in human-readable
+// format.
 type Duration time.Duration
 
+// MarshalYAML marshals the Duration to its string representation.
 func (dur Duration) MarshalYAML() (any, error) {
 	return time.Duration(dur).String(), nil
 }
 
+// Recorder records information about a flow, actions, and IO operations. It is
+// used to generate run info at the end of an LWEE workflow run.
 type Recorder struct {
 	logger *zap.Logger
 	flow   FlowInfo
 	m      sync.Mutex
 }
 
+// NewCollector creates a new instance of Recorder with the given logger.
 func NewCollector(logger *zap.Logger) *Recorder {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Recorder{
 		logger: logger,
 		flow: FlowInfo{
@@ -38,24 +49,29 @@ func NewCollector(logger *zap.Logger) *Recorder {
 	}
 }
 
+// RecordFlowName records the name of the flow in the Recorder.
 func (collector *Recorder) RecordFlowName(name string) {
 	collector.m.Lock()
 	defer collector.m.Unlock()
 	collector.flow.Name = name
 }
 
+// RecordFlowStart records the start time of the flow in the Recorder.
 func (collector *Recorder) RecordFlowStart(t time.Time) {
 	collector.m.Lock()
 	defer collector.m.Unlock()
 	collector.flow.Start = t
 }
 
+// RecordFlowEnd records the end time of the flow in the Recorder.
 func (collector *Recorder) RecordFlowEnd(t time.Time) {
 	collector.m.Lock()
 	defer collector.m.Unlock()
 	collector.flow.End = t
 }
 
+// assureAction checks if the given action is in the flow's action map. If not,
+// it adds the action with an empty ActionInfo.
 func (collector *Recorder) assureAction(actionName string) {
 	collector.m.Lock()
 	defer collector.m.Unlock()
@@ -68,6 +84,7 @@ func (collector *Recorder) assureAction(actionName string) {
 	}
 }
 
+// RecordActionStart records the start time of an action in the Recorder.
 func (collector *Recorder) RecordActionStart(actionName string, t time.Time) {
 	collector.assureAction(actionName)
 	collector.m.Lock()
@@ -77,6 +94,7 @@ func (collector *Recorder) RecordActionStart(actionName string, t time.Time) {
 	collector.flow.Actions[actionName] = action
 }
 
+// RecordActionEnd records the end time of an action in the Recorder.
 func (collector *Recorder) RecordActionEnd(actionName string, t time.Time) {
 	collector.assureAction(actionName)
 	collector.m.Lock()
@@ -86,6 +104,7 @@ func (collector *Recorder) RecordActionEnd(actionName string, t time.Time) {
 	collector.flow.Actions[actionName] = action
 }
 
+// RecordActionInfo records the information of an action in the Recorder.
 func (collector *Recorder) RecordActionInfo(actionName string, info map[string]string) {
 	collector.assureAction(actionName)
 	collector.m.Lock()
@@ -95,6 +114,8 @@ func (collector *Recorder) RecordActionInfo(actionName string, info map[string]s
 	collector.flow.Actions[actionName] = action
 }
 
+// assureIOWrite ensures that the given writeName exists in the writes-map of the
+// Recorder's IO data. If the writeName already exists, it does nothing.
 func (collector *Recorder) assureIOWrite(writeName string) {
 	collector.m.Lock()
 	defer collector.m.Unlock()
@@ -105,6 +126,8 @@ func (collector *Recorder) assureIOWrite(writeName string) {
 	collector.flow.IO.Writes[writeName] = IOWriteInfo{}
 }
 
+// RecordIOWriteInfo records information about an IO-write in the Recorder. It
+// takes a write-name and IOWriteInfo to record the desired information.
 func (collector *Recorder) RecordIOWriteInfo(writeName string, info IOWriteInfo) {
 	collector.assureIOWrite(writeName)
 	collector.m.Lock()
@@ -112,6 +135,8 @@ func (collector *Recorder) RecordIOWriteInfo(writeName string, info IOWriteInfo)
 	collector.flow.IO.Writes[writeName] = info
 }
 
+// bake calculates the duration of the flow and actions, and formats the IO
+// information.
 func (collector *Recorder) bake() {
 	collector.m.Lock()
 	defer collector.m.Unlock()
@@ -135,6 +160,10 @@ func (collector *Recorder) bake() {
 	collector.flow.IO.TotalWritten = logging.FormatByteCountDecimal(collector.flow.IO.TotalWrittenBytes)
 }
 
+// Result returns the marshaled representation of the Recorder's flow information
+// as a YAML-encoded byte slice. It bakes the flow information before marshaling.
+// If an error occurs during marshaling, it returns nil and the error. The
+// Recorder must have the flow information recorded before calling Result.
 func (collector *Recorder) Result() ([]byte, error) {
 	collector.bake()
 	collector.m.Lock()
@@ -146,6 +175,7 @@ func (collector *Recorder) Result() ([]byte, error) {
 	return result, nil
 }
 
+// FlowInfo describes useful information for the flow.
 type FlowInfo struct {
 	Name    string                `yaml:"flowName"`
 	Start   time.Time             `yaml:"start"`
@@ -155,6 +185,8 @@ type FlowInfo struct {
 	IO      IOInfo                `yaml:"io"`
 }
 
+// ActionInfo is used in FlowInfo.Actions and holds information regarding an
+// action run.
 type ActionInfo struct {
 	Start time.Time         `yaml:"start"`
 	End   time.Time         `yaml:"end"`
@@ -162,12 +194,14 @@ type ActionInfo struct {
 	Info  map[string]string `yaml:"info"`
 }
 
+// IOInfo is used in FlowInfo.IO for stats regarding action IO.
 type IOInfo struct {
 	TotalWritten      string                 `yaml:"totalWritten"`
 	TotalWrittenBytes int64                  `yaml:"totalWrittenBytes"`
 	Writes            map[string]IOWriteInfo `yaml:"writes"`
 }
 
+// IOWriteInfo provides action IO write-stats.
 type IOWriteInfo struct {
 	Requesters                        []string          `yaml:"requesters"`
 	WaitForOpenStart                  time.Time         `yaml:"waitForOpenStart"`

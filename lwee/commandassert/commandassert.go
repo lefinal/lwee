@@ -1,3 +1,4 @@
+// Package commandassert provides assertion functionality for running commands.
 package commandassert
 
 import (
@@ -10,25 +11,40 @@ import (
 	"strings"
 )
 
+// ShouldType is the type of assertion to make.
 type ShouldType string
 
 const (
-	ShouldContain    ShouldType = "contain"
-	ShouldEqual      ShouldType = "equal"
+	// ShouldContain checks whether the target is contained in the output.
+	ShouldContain ShouldType = "contain"
+	// ShouldEqual checks whether the target is equal to the output.
+	ShouldEqual ShouldType = "equal"
+	// ShouldMatchRegex checks whether the output matches the target regular
+	// expression.
 	ShouldMatchRegex ShouldType = "match-regex"
 )
 
+// Options for Assertion.
 type Options struct {
 	Logger *zap.Logger
-	Run    []string
+	// Run is the command to run.
+	Run []string
+	// Should is the type of check to perform.
 	Should ShouldType
+	// Target is the value to use for the assertion. This may be a string the output
+	// is expected to be equal to, a regular expression, etc. This depends on Should.
 	Target string
 }
 
+// Assertion allows performing an assertion via Assert. This will run the
+// specified command and perform assertions on it. If running the command or any
+// assertion fails, an error is returned.
 type Assertion interface {
 	Assert(ctx context.Context) error
 }
 
+// New creates a new Assertion with the given Options. Run it with
+// Assertion.Assert.
 func New(options Options) (Assertion, error) {
 	if options.Logger == nil {
 		options.Logger = zap.NewNop()

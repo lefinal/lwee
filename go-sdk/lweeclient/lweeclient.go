@@ -1,3 +1,4 @@
+// Package lweeclient provides a Client for usage with LWEE.
 package lweeclient
 
 import (
@@ -14,7 +15,10 @@ import (
 	"time"
 )
 
+// DefaultOutputBufferSize is the default buffer size for output streams.
 const DefaultOutputBufferSize = 16 * 1024 * 1024 // 16MB
+// DefaultListenAddr is the default listen address under which to serve the HTTP
+// API.
 const DefaultListenAddr = ":17733"
 
 // InputReader allows reading an input LWEE stream. Before reading, make sure to

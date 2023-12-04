@@ -34,8 +34,9 @@ type commandActionExtraRenderData struct {
 	WorkspaceDir string
 }
 
+// commandAction runs a locally available application.
 type commandAction struct {
-	*Base
+	*base
 	assertions       map[string]commandassert.Assertion
 	runInfoProviders map[string]runinfo.Provider
 	command          []string
@@ -57,7 +58,7 @@ type commandAction struct {
 	commandStateCond *sync.Cond
 }
 
-func (factory *Factory) newCommandAction(base *Base, renderData templaterender.Data, commandActionDetails lweeflowfile.ActionRunnerCommand) (action, error) {
+func (factory *Factory) newCommandAction(base *base, renderData templaterender.Data, commandActionDetails lweeflowfile.ActionRunnerCommand) (action, error) {
 	// Render action runner details.
 	workspaceDir := factory.Locator.ActionWorkspaceDirByAction(base.actionName)
 	renderData.Action.Extras = commandActionExtraRenderData{
@@ -73,7 +74,7 @@ func (factory *Factory) newCommandAction(base *Base, renderData templaterender.D
 	}
 	// Build the actual action.
 	commandAction := &commandAction{
-		Base:             base,
+		base:             base,
 		assertions:       make(map[string]commandassert.Assertion),
 		runInfoProviders: make(map[string]runinfo.Provider),
 		command:          commandActionDetails.Command,
@@ -226,7 +227,7 @@ func (action *commandAction) newWorkspaceFileInputRequest(input lweeflowfile.Act
 func (action *commandAction) registerOutputProviders() error {
 	stdoutOutputRegistered := false
 	for outputName, output := range action.fileActionOutputs {
-		var outputOffer OutputOfferWithOutputter
+		var outputOffer outputOfferWithOutputter
 		switch output := output.(type) {
 
 		case lweeflowfile.ActionOutputStdout:
@@ -247,11 +248,11 @@ func (action *commandAction) registerOutputProviders() error {
 	return nil
 }
 
-func (action *commandAction) newStdoutOutputOffer() OutputOfferWithOutputter {
+func (action *commandAction) newStdoutOutputOffer() outputOfferWithOutputter {
 	stdoutReader, stdoutWriter := io.Pipe()
 	action.stdoutWriter = stdoutWriter
 
-	return OutputOfferWithOutputter{
+	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseRunning,
 		},
@@ -292,8 +293,8 @@ func (action *commandAction) newStdoutOutputOffer() OutputOfferWithOutputter {
 	}
 }
 
-func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) OutputOfferWithOutputter {
-	return OutputOfferWithOutputter{
+func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.ActionOutputWorkspaceFile) outputOfferWithOutputter {
+	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,
 		},

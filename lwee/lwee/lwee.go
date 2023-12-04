@@ -1,3 +1,5 @@
+// Package lwee is the main package for LWEE related logic. It provides LWEE that
+// implements all logic for execution workflows.
 package lwee
 
 import (
@@ -21,7 +23,9 @@ import (
 	"time"
 )
 
+// Config describes the configuration for LWEE.
 type Config struct {
+	// VerifyOnly performs a dry-run.
 	VerifyOnly bool
 	// DisableCleanup describes whether cleanup for files and containers should be
 	// disabled.
@@ -29,6 +33,7 @@ type Config struct {
 	ContainerEngineType container.EngineType
 }
 
+// LWEE is the main LWEE engine.
 type LWEE struct {
 	logger          *zap.Logger
 	config          Config
@@ -41,6 +46,7 @@ type LWEE struct {
 
 type flowOutput func(ctx context.Context) error
 
+// New creates a new LWEE instance.
 func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locator, config Config) (*LWEE, error) {
 	// Verify the flow.
 	report := flowFile.Validate()
@@ -75,6 +81,8 @@ func New(logger *zap.Logger, flowFile lweeflowfile.Flow, locator *locator.Locato
 	return lwee, nil
 }
 
+// Run executes the LWEE flow by building and verifying actions, registering IO
+// and then running the actions.
 func (lwee *LWEE) Run(ctx context.Context) error {
 	lwee.runInfoRecorder.RecordFlowName(lwee.flowFile.Name)
 	// Setup container engine.

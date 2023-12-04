@@ -1,3 +1,4 @@
+// Package scheduler is responsible for properly scheduling actions.
 package scheduler
 
 import (
@@ -66,6 +67,8 @@ type output struct {
 	source actionio.SourceWriter
 }
 
+// Scheduler is responsible for scheduling and executing actions. Start it with
+// Run.
 type Scheduler struct {
 	ctx              context.Context
 	cancel           context.CancelCauseFunc
@@ -139,6 +142,8 @@ func New(runCtx context.Context, logger *zap.Logger, ioSupplier actionio.Supplie
 	return scheduler, nil
 }
 
+// isCanceled checks whether the Scheduler's context is canceled. It returns true
+// if the context is canceled, otherwise false.
 func (scheduler *Scheduler) isCanceled() bool {
 	select {
 	case <-scheduler.ctx.Done():
@@ -148,6 +153,7 @@ func (scheduler *Scheduler) isCanceled() bool {
 	}
 }
 
+// schedule schedules the actions in the Scheduler.
 func (scheduler *Scheduler) schedule() {
 	scheduler.m.Lock()
 	defer scheduler.m.Unlock()
@@ -183,6 +189,29 @@ func (scheduler *Scheduler) fail(err error) {
 	scheduler.failAndLog(scheduler.logger, err)
 }
 
+// scheduleAction schedules the execution of a scheduled action. If there are any
+// input ingestions that are not done and require finishing within the current
+// phase, it returns false with a list of waiting sources. If there are no
+// remaining input ingestions, it checks if all output providers are done and
+// require finishing within the current phase. If not, it returns false with a
+// list of waiting outputs. If there are no remaining input ingestions or output
+// providers, it progresses to the next phase based on the current phase:
+//
+//   - If the current phase is action.PhasePreStart, it progresses to
+//     action.PhaseWaitForLiveInput.
+//   - If the current phase is action.PhaseWaitForLiveInput, it
+//     checks if there are any input ingestion requests that require finishing when
+//     the application is running. If there are no ready inputs, it returns false, so
+//     it can get scheduled later. Otherwise, it progresses to action.PhaseReady.
+//   - If the current phase is action.PhaseReady, it starts the action by calling its
+//     Start-method in a goroutine. After starting the action, it progresses to
+//     action.PhaseStarting.
+//   - If the current phase is action.PhaseStarting or action.PhaseRunning, it returns false.
+//   - If the current phase is action.PhaseStopped, it marks the action as done and returns false.
+//   - If the current phase is action.PhaseDone, it returns false.
+//
+// If false is returned, scheduleAction should be called again. If any errors
+// occur during the execution, it logs the error and returns false.
 func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *scheduledAction) (bool, error) {
 	// Assure all input ingestions are done that require finishing within this phase.
 	inputIngestionsNotDoneForPhase := scheduledAction.inputIngestionsNotDoneForPhase(scheduledAction.currentPhase)
@@ -327,6 +356,9 @@ func (scheduler *Scheduler) scheduleAction(logger *zap.Logger, scheduledAction *
 	}
 }
 
+// Run starts the scheduler and runs the scheduling process. If the scheduler is
+// canceled or all actions are completed, it returns nil. Otherwise, it returns
+// the cause of the context cancellation.
 func (scheduler *Scheduler) Run() error {
 	defer func() { scheduler.logger.Debug("done") }()
 	// Start input reading (waiting and ingestion).
@@ -347,6 +379,9 @@ func (scheduler *Scheduler) Run() error {
 	return context.Cause(scheduler.ctx)
 }
 
+// readActionInputs reads the inputs for each scheduled action concurrently. It
+// waits for each input source to be ready, then ingests the input and marks it
+// as done.
 func (scheduler *Scheduler) readActionInputs(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	scheduler.m.Lock()
@@ -371,6 +406,7 @@ func (scheduler *Scheduler) readActionInputs(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// readActionInput waits until the source is ready. It then ingests the input.
 func (scheduler *Scheduler) readActionInput(ctx context.Context, scheduledAction *scheduledAction, input *input) error {
 	logger := scheduler.logger.Named("action").Named(logging.WrapName(scheduledAction.action.Name())).
 		Named("input").Named(logging.WrapName(input.request.InputName))
@@ -400,5 +436,3 @@ func (scheduler *Scheduler) readActionInput(ctx context.Context, scheduledAction
 	scheduler.schedule()
 	return nil
 }
-
-// TODO: deadlock erkennung? im scheduler vermutlich, also schauen, ob alle in der phase für warten sind. aber concurrency probleme?

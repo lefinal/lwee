@@ -1,3 +1,4 @@
+// Package input allows requesting input from the user.
 package input
 
 import (
@@ -8,8 +9,7 @@ import (
 	"strings"
 )
 
-var readLine = make(chan string, 16)
-
+// Input provides methods for prompting the user for inputs.
 type Input interface {
 	// RequestConfirm prompts the user with the given one for confirmation. If no
 	// input was provided, the given default value will be returned.
@@ -21,9 +21,12 @@ type Input interface {
 	RequestSelection(ctx context.Context, prompt string, options []string) (int, string, error)
 }
 
+// Stdin implements Input using stdin.
 type Stdin struct {
 }
 
+// RequestConfirm prompts the user with the given one for confirmation. If no
+// input was provided, the given default value will be returned.
 func (input *Stdin) RequestConfirm(ctx context.Context, prompt string, defaultValue bool) (bool, error) {
 	defaultValueStr := "n"
 	if defaultValue {
@@ -67,6 +70,8 @@ func shouldAbortPrompt(ctx context.Context, err error) bool {
 	return false
 }
 
+// createErrorMessage creates an error message by combining the given message,
+// error, and value.
 func createErrorMessage(message string, err error, value string) string {
 	errDescription := message
 	if err.Error() != "" {
@@ -78,7 +83,7 @@ func createErrorMessage(message string, err error, value string) string {
 	return errDescription
 }
 
-// Request prompt the user with the given one for an input.
+// Request prompts the user with the given one for an input.
 //
 // The provided prompt should be in the format of "Enter xyz". RequestInput will
 // append colons.
@@ -101,6 +106,9 @@ func (input *Stdin) Request(ctx context.Context, prompt string, validate func(s 
 	}
 }
 
+// RequestSelection prompts the user with the given options and returns the
+// selected index and value. If an error occurs or an invalid value is entered,
+// it will display an error message and prompt again.
 func (input *Stdin) RequestSelection(ctx context.Context, prompt string, options []string) (int, string, error) {
 	for {
 		myPrompt := promptui.Select{

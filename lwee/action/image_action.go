@@ -17,7 +17,7 @@ type imageActionExtraRenderData struct {
 	WorkspaceMountDir string
 }
 
-func (factory *Factory) newImageAction(base *Base, renderData templaterender.Data, imageActionDetails lweeflowfile.ActionRunnerImage) (action, error) {
+func (factory *Factory) newImageAction(base *base, renderData templaterender.Data, imageActionDetails lweeflowfile.ActionRunnerImage) (action, error) {
 	// Render action runner details.
 	workspaceHostDir := factory.Locator.ActionWorkspaceDirByAction(base.actionName)
 	workspaceMountDir := factory.Locator.ContainerWorkspaceMountDir()
@@ -33,7 +33,7 @@ func (factory *Factory) newImageAction(base *Base, renderData templaterender.Dat
 	// Build the actual action.
 	imageAction := &imageAction{
 		imageRunner: imageRunner{
-			Base:                 base,
+			base:                 base,
 			containerEngine:      factory.ContainerEngine,
 			imageTag:             imageActionDetails.Image,
 			command:              imageActionDetails.Command,

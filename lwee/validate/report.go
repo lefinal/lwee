@@ -1,3 +1,7 @@
+// Package validate implements a validation framework. Reporter is used as
+// syntactic sugar in validation. Set the next field using NextField and then
+// report errors with Report. The final error list can be retrieved via
+// ErrorList.
 package validate
 
 // IPv4Regex is a regex that matches IPv4 addresses.
@@ -15,12 +19,14 @@ type Reporter struct {
 	report     *Report
 }
 
+// Issue represents a validation issue.
 type Issue struct {
 	Field    string
 	BadValue any
 	Detail   string
 }
 
+// NewIssue creates a new Issue with the specified field, bad value, and detail.
 func NewIssue(field *Path, badValue any, detail string) Issue {
 	return Issue{
 		Field:    field.String(),
@@ -29,11 +35,13 @@ func NewIssue(field *Path, badValue any, detail string) Issue {
 	}
 }
 
+// Report represents the validation report.
 type Report struct {
 	Warnings []Issue
 	Errors   []Issue
 }
 
+// NewReport creates a new empty Report.
 func NewReport() *Report {
 	return &Report{
 		Warnings: make([]Issue, 0),
@@ -51,6 +59,8 @@ func (r *Report) AddError(issue Issue) {
 	r.Errors = append(r.Errors, issue)
 }
 
+// AddReport appends the warnings and errors from another Report to the current
+// Report.
 func (r *Report) AddReport(otherReport *Report) {
 	r.Warnings = append(r.Warnings, otherReport.Warnings...)
 	r.Errors = append(r.Errors, otherReport.Errors...)

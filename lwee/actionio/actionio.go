@@ -1,3 +1,5 @@
+// Package actionio handles action IO by providing features like buffering,
+// buffer swapping, (de)multiplexing, etc.
 package actionio
 
 import (
@@ -16,8 +18,11 @@ import (
 // DefaultReaderSourceBufferSize is the default source buffer size for Supplier.
 const DefaultReaderSourceBufferSize = 10000000 // 10MB
 
+// SourceReader represents a reader for a data source.
 type SourceReader struct {
-	Name   string
+	// Name of the source.
+	Name string
+	// Open receives once the source is open.
 	Open   <-chan *AvailableOptimizations
 	Reader io.ReadCloser
 }
@@ -37,12 +42,16 @@ type sourceReader struct {
 	// requesterName holds a string representation of the requesterName's identifier.
 	// This is used for logging as well as cycle detection.
 	requesterName string
-	open          chan<- *AvailableOptimizations
-	writer        io.WriteCloser
+	// open is the channel to notify the returned reader that the source is open.
+	open   chan<- *AvailableOptimizations
+	writer io.WriteCloser
 }
 
+// SourceWriter represents a writer for a data source.
 type SourceWriter struct {
-	Name   string
+	// Name of the source.
+	Name string
+	// Open must be sent to when the source is open.
 	Open   chan<- AlternativeSourceAccess
 	Writer io.WriteCloser
 }
@@ -52,10 +61,14 @@ type sourceWriter struct {
 	// providerName holds a string representation of the providerName's identifier.
 	// This is used for logging as well as cycle detection.
 	providerName string
-	open         <-chan AlternativeSourceAccess
-	reader       io.ReadCloser
+	// open is the channel to read from the returned writer that the source is open.
+	open   <-chan AlternativeSourceAccess
+	reader io.ReadCloser
 }
 
+// AlternativeSourceAccess holds alternative access methods for the source data.
+// This can be used for optimizations. However, you should be careful with
+// resources that need to be persisted like flow inputs.
 type AlternativeSourceAccess struct {
 	// Filename is a non-empty string if the source data is also available as file at
 	// the specified location. Keep in mind that there might be an optimization where
@@ -64,6 +77,7 @@ type AlternativeSourceAccess struct {
 	Filename string
 }
 
+// AvailableOptimizations represents available optimizations for a data source.
 type AvailableOptimizations struct {
 	// Filename is a non-empty string if only one reader requested the source and the
 	// source data is available as file. The reader might then just move the file if
@@ -91,6 +105,8 @@ func (optimizations *AvailableOptimizations) IsTransmissionSkipped() bool {
 	return optimizations.isSkipped
 }
 
+// Supplier handles action IO. Register all inputs and outputs. Then, call
+// Forward to let the Supplier handle IO.
 type Supplier interface {
 	RequestSource(sourceName string, entityName string, requesterName string) SourceReader
 	RegisterSourceProvider(sourceName string, entityName string, providerName string) (SourceWriter, error)
@@ -98,12 +114,16 @@ type Supplier interface {
 	Forward(ctx context.Context) error
 }
 
-type SourceReadyNotifierFn func(sourceName string)
-
+// Ingestor allows ingesting data from a source.
 type Ingestor func(ctx context.Context, source io.Reader) error
 
+// Outputter is a function for providing source output. The passed channel is
+// expected to be sent on once the output is ready. The data needs to be written
+// to the passed io.WriteCloser. Close it when all data has been written.
 type Outputter func(ctx context.Context, ready chan<- AlternativeSourceAccess, writer io.WriteCloser) error
 
+// sourceForwarder manages data transmission between a sourceWriter and multiple
+// sourceReader.
 type sourceForwarder struct {
 	logger          *zap.Logger
 	copyOptions     CopyOptions
@@ -113,6 +133,11 @@ type sourceForwarder struct {
 	runInfoRecorder *runinfo.Recorder
 }
 
+// determineAvailableOptimizations determines the available optimizations based
+// on the AlternativeSourceAccess and the sourceReader list. It returns the
+// AvailableOptimizations with AvailableOptimizations.Filename set if there is
+// only one reader and AlternativeSourceAccess.Filename is non-empty. Otherwise,
+// it returns empty AvailableOptimizations.
 func determineAvailableOptimizations(logger *zap.Logger, alternativeSourceAccess AlternativeSourceAccess, readers []sourceReader) AvailableOptimizations {
 	availableOptimizations := AvailableOptimizations{}
 	if alternativeSourceAccess.Filename != "" && len(readers) == 1 {
@@ -122,6 +147,11 @@ func determineAvailableOptimizations(logger *zap.Logger, alternativeSourceAccess
 	return availableOptimizations
 }
 
+// forward data from source writer to source reader(s). It waits for the writer
+// to be ready and then notifies all readers that the source is open. Then, it
+// copies data from the readers to the writer while recording statistics about
+// the write-operation. If there are no readers registered, it discards the
+// source output.
 func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	defer func() {
 		_ = forwarder.writer.reader.Close()
@@ -214,8 +244,8 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 		}
 	}
 	writeTimesWithRequester := make(map[string]string)
-	// We go by registered readers in order to avoid errors when no readers are
-	// registered, but I/O discard is being passed to writing.
+	// We go by registered readers to avoid errors when no readers are registered,
+	// but IO discard is being passed to writing.
 	if len(forwarder.readers) > 0 {
 		for i := range stats.writeTimes {
 			writeTimesWithRequester[forwarder.readers[i].requesterName] = stats.writeTimes[i].String()
@@ -250,6 +280,7 @@ func (forwarder *sourceForwarder) forward(ctx context.Context) error {
 	return nil
 }
 
+// requesterNames returns the names of the requesters in readers.
 func (forwarder *sourceForwarder) requesterNames() []string {
 	requestedByReaders := make([]string, 0)
 	for _, reader := range forwarder.readers {
@@ -267,6 +298,7 @@ type supplier struct {
 	m               sync.Mutex
 }
 
+// NewSupplier creates a new Supplier.
 func NewSupplier(logger *zap.Logger, copyOptions CopyOptions, runInfoRecorder *runinfo.Recorder) Supplier {
 	return &supplier{
 		logger:          logger,
@@ -286,6 +318,9 @@ func (supplier *supplier) newForwarder(sourceName string) *sourceForwarder {
 	}
 }
 
+// RequestSource requests a source from the supplier. It associates the source
+// with the given entity and requester names. It returns a SourceReader that can
+// be used to read the source once it is open.
 func (supplier *supplier) RequestSource(sourceName string, entityName string, requesterName string) SourceReader {
 	supplier.logger.Debug(fmt.Sprintf("request source %q", sourceName))
 	supplier.m.Lock()
@@ -317,6 +352,9 @@ func (supplier *supplier) RequestSource(sourceName string, entityName string, re
 	return readerToReturn
 }
 
+// RegisterSourceProvider registers a source provider for a given source name,
+// entity name, and provider name. It returns a SourceWriter that can be used to
+// write data to the source, or an error if the registration fails.
 func (supplier *supplier) RegisterSourceProvider(sourceName string, entityName string, providerName string) (SourceWriter, error) {
 	supplier.logger.Debug(fmt.Sprintf("provide source output %q", sourceName))
 	supplier.m.Lock()
@@ -356,6 +394,9 @@ func (supplier *supplier) RegisterSourceProvider(sourceName string, entityName s
 	return writerToReturn, nil
 }
 
+// Validate checks if the supplier has missing source providers (writers) and
+// detects any cycles. It returns an error if there are missing source providers
+// or cycles are detected.
 func (supplier *supplier) Validate() error {
 	// Check for missing source providers (writers).
 	for _, forwarder := range supplier.forwarders {
@@ -372,6 +413,10 @@ func (supplier *supplier) Validate() error {
 	return nil
 }
 
+// Forward waits for all the forwarders associated with the supplier to complete.
+// It executes each forwarder in a separate goroutine and waits for all
+// goroutines to complete using errgroup. It returns nil if all forwarders
+// complete without errors.
 func (supplier *supplier) Forward(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	supplier.m.Lock()

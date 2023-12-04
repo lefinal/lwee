@@ -1,3 +1,5 @@
+// Package projactionbuilder provides a Builder that creates a new project action
+// in an LWEE project.
 package projactionbuilder
 
 import (
@@ -20,6 +22,7 @@ import (
 
 const goImage = "golang:1.21"
 
+// Builder allows interactively creating a project action via Build.
 type Builder struct {
 	logger          *zap.Logger
 	locator         *locator.Locator
@@ -28,6 +31,8 @@ type Builder struct {
 	actionName      string
 }
 
+// NewBuilder creates a new Builder. Start building a new project action using
+// Builder.Build.
 func NewBuilder(logger *zap.Logger, locator *locator.Locator, input input.Input, containerEngine container.Engine) *Builder {
 	return &Builder{
 		logger:          logger,
@@ -48,6 +53,8 @@ func validateActionName(s string) error {
 	return nil
 }
 
+// Build builds a new project action. It prompts the user for the action name and
+// template selection, and then builds the action and template.
 func (builder *Builder) Build(ctx context.Context) error {
 	var err error
 	// Request the action name.
@@ -86,6 +93,8 @@ func (builder *Builder) Build(ctx context.Context) error {
 	return nil
 }
 
+// buildAction builds a new project action by creating the action directory and
+// file.
 func (builder *Builder) buildAction() error {
 	actionDir := builder.locator.ProjectActionDirByAction(builder.actionName)
 	// Assure action dir does not yet exist.
@@ -108,6 +117,9 @@ func (builder *Builder) buildAction() error {
 	return nil
 }
 
+// buildGoTemplate builds a Go template for the project action using the SDK. It
+// ensures the most recent SDK version is available, initializes the Go module,
+// copies the template files, and tidies up the action.
 func (builder *Builder) buildGoTemplate(ctx context.Context) error {
 	builder.logger.Info("making sure you get the most recent SDK version. this might take a while...")
 	actionLocator := builder.locator.ProjectActionLocatorByAction(builder.actionName)
@@ -179,6 +191,9 @@ func (builder *Builder) buildGoTemplate(ctx context.Context) error {
 	return nil
 }
 
+// buildGoTemplateNoSDK builds the Go template without using the SDK. It
+// initializes the Go module and copies the template files to the action
+// directory.
 func (builder *Builder) buildGoTemplateNoSDK(ctx context.Context) error {
 	actionLocator := builder.locator.ProjectActionLocatorByAction(builder.actionName)
 	currentUser, err := user.Current()
@@ -213,6 +228,8 @@ func (builder *Builder) buildGoTemplateNoSDK(ctx context.Context) error {
 	return nil
 }
 
+// copyEmbedDir copies directory and files from source embedded filesystem to the
+// destination directory. It skips blacklisted files and directories.
 func copyEmbedDir(src embed.FS, srcSubDir string, dstDir string, currentDir string, blacklist []string) error {
 	currentSubDir := path.Join(srcSubDir, currentDir)
 	dirEntries, err := src.ReadDir(currentSubDir)
@@ -272,6 +289,7 @@ func copyEmbedDir(src embed.FS, srcSubDir string, dstDir string, currentDir stri
 	return nil
 }
 
+// isBlacklisted checks if a name matches any entry in the blacklist.
 func isBlacklisted(name string, blacklist []string) (bool, error) {
 	for _, blacklistEntry := range blacklist {
 		blacklistEntryRegex, err := regexp.Compile(blacklistEntry)

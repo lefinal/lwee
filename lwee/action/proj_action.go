@@ -22,7 +22,7 @@ type projectActionExtraRenderData struct {
 	ImageTag          string
 }
 
-func (factory *Factory) newProjectAction(base *Base, renderData templaterender.Data, projectActionDetails lweeflowfile.ActionRunnerProjectAction) (action, error) {
+func (factory *Factory) newProjectAction(base *base, renderData templaterender.Data, projectActionDetails lweeflowfile.ActionRunnerProjectAction) (action, error) {
 	// Assure action exists.
 	actionDir := factory.Locator.ProjectActionDirByAction(projectActionDetails.Name)
 	_, err := os.Stat(actionDir)
@@ -69,7 +69,7 @@ func (factory *Factory) newProjectAction(base *Base, renderData templaterender.D
 		// Build the actual action.
 		projectActionImage := &projectActionImage{
 			imageRunner: imageRunner{
-				Base:                 base,
+				base:                 base,
 				containerEngine:      factory.ContainerEngine,
 				imageTag:             projectActionImageTag(factory.FlowName, projectActionDetails.Name),
 				command:              projectActionDetails.Command,

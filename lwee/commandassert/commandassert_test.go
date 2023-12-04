@@ -195,9 +195,8 @@ func TestShouldMatchRegex(t *testing.T) {
 			if tt.wantCreateErr {
 				assert.Error(t, err, "create should fail")
 				return
-			} else {
-				require.NoError(t, err, "create should not fail")
 			}
+			require.NoError(t, err, "create should not fail")
 			err = assertion.Assert(context.Background())
 			if tt.wantAssertErr {
 				assert.Error(t, err, "assert should fail")

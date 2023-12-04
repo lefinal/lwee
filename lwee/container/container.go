@@ -1,3 +1,4 @@
+// Package container abstracts usage of container runtimes.
 package container
 
 import (
@@ -15,13 +16,16 @@ import (
 	"time"
 )
 
+// EngineType describes the type of container engine to use.
 type EngineType string
 
+// Engine types.
 const (
 	EngineTypeDocker EngineType = "docker"
 	EngineTypePodman EngineType = "podman"
 )
 
+// ImageBuildOptions are the options for building an image.
 type ImageBuildOptions struct {
 	// BuildLogger for build log. If nil, build log is not printed.
 	BuildLogger *zap.Logger
@@ -30,6 +34,7 @@ type ImageBuildOptions struct {
 	File        string
 }
 
+// Config is the configuration for a container.
 type Config struct {
 	ExposedPorts nat.PortSet
 	VolumeMounts []VolumeMount
@@ -39,19 +44,23 @@ type Config struct {
 	User         string
 	Env          map[string]string
 	// Whether to remove the container after it exited. Normally, we need to set this
-	// to false in order to read stdout logs even if it finishes too fast. Otherwise,
+	// to false, so we can read stdout logs even if it finishes too fast. Otherwise,
 	// the logs would not be available or waiting for the container to finish might
 	// fail as it is deleted.
 	AutoRemove bool
 }
 
+// VolumeMount describes a mount point for a volume.
 type VolumeMount struct {
 	Source string
 	Target string
 }
 
+// Engine is an interface for managing a container engine.
 type Engine interface {
+	// Start the engine. This includes starting clean-up procedures.
 	Start(ctx context.Context) error
+	// Stop the engine and run clean-ups.
 	Stop()
 	ImagePull(ctx context.Context, imageTag string) error
 	ImageBuild(ctx context.Context, buildOptions ImageBuildOptions) error
@@ -67,6 +76,7 @@ type Engine interface {
 	RunContainer(ctx context.Context, containerConfig Config) error
 }
 
+// NewEngine creates a new Engine for the given EngineType.
 func NewEngine(logger *zap.Logger, engineType EngineType, disableCleanup bool) (Engine, error) {
 	var engine Engine
 	var err error
@@ -84,6 +94,8 @@ func NewEngine(logger *zap.Logger, engineType EngineType, disableCleanup bool) (
 	return engine, nil
 }
 
+// engineClient abstracts a container engine so that common logic can be placed
+// within engine.
 type engineClient interface {
 	imageExists(ctx context.Context, imageTag string) (bool, error)
 	imagePull(ctx context.Context, imageTag string) error
@@ -99,6 +111,9 @@ type engineClient interface {
 	removeContainer(ctx context.Context, containerID string) error
 }
 
+// createdContainer represents a container that has been created by the container
+// engine. This is used for centralized generation of error details, logging,
+// etc.
 type createdContainer struct {
 	logger *zap.Logger
 	name   string
@@ -113,6 +128,7 @@ type containerStopResult struct {
 	exitCode int
 }
 
+// mehDetails returns meh.Details for the createdContainer.
 func (container createdContainer) mehDetails() meh.Details {
 	return meh.Details{
 		"container_name":  container.name,
@@ -122,13 +138,12 @@ func (container createdContainer) mehDetails() meh.Details {
 }
 
 // engine wraps a client for avoiding duplicate code for common logic. This
-// includes extended error details or avoiding duplicate image builds.
+// includes extended error details or deduplicated image builds.
 type engine struct {
-	logger         *zap.Logger
-	client         engineClient
-	wg             sync.WaitGroup
-	cleanUpper     cleanUpper
-	disableCleanup bool
+	logger     *zap.Logger
+	client     engineClient
+	wg         sync.WaitGroup
+	cleanUpper cleanUpper
 	// buildsInProgressByTag holds a map of tags that have ongoing builds. If another
 	// build is triggered for the same tag, it will be delayed until the first one is
 	// done and then start building. The reason for this is that duplicate builds for
@@ -152,28 +167,31 @@ func newEngine(logger *zap.Logger, client engineClient, disableCleanup bool) *en
 		logger:                    logger,
 		client:                    client,
 		cleanUpper:                cleanUpper,
-		disableCleanup:            disableCleanup,
 		buildsInProgressByTag:     make(map[string]struct{}),
 		buildsInProgressByTagCond: sync.NewCond(&sync.Mutex{}),
 		createdContainersByID:     map[string]createdContainer{},
 	}
 }
 
+// Start starts the engine and any possible clean-upper.
 func (engine *engine) Start(ctx context.Context) error {
-	if !engine.disableCleanup {
-		err := engine.cleanUpper.start(ctx)
-		if err != nil {
-			return meh.Wrap(err, "start clean-upper", nil)
-		}
+	err := engine.cleanUpper.start(ctx)
+	if err != nil {
+		return meh.Wrap(err, "start clean-upper", nil)
 	}
 	return nil
 }
 
+// Stop stops the engine by performing clean-ups and waiting for all goroutines
+// to finish.
 func (engine *engine) Stop() {
 	engine.cleanUpper.stop()
 	engine.wg.Wait()
 }
 
+// createdContainerByID retrieves a createdContainer configuration by its
+// assigned container ID. If the container ID does not exist in the map, an empty
+// createdContainer is returned.
 func (engine *engine) createdContainerByID(containerID string) createdContainer {
 	engine.createdContainersByIDMutex.RLock()
 	defer engine.createdContainersByIDMutex.RUnlock()
@@ -190,6 +208,8 @@ func (engine *engine) createdContainerByID(containerID string) createdContainer 
 	}
 }
 
+// ImagePull pulls the specified image if it does not already exist in the
+// engine. It returns an error if the operation fails.
 func (engine *engine) ImagePull(ctx context.Context, imageTag string) error {
 	imageExists, err := engine.client.imageExists(ctx, imageTag)
 	if err != nil {
@@ -202,13 +222,22 @@ func (engine *engine) ImagePull(ctx context.Context, imageTag string) error {
 	return engine.client.imagePull(ctx, imageTag)
 }
 
+// ImageBuild builds a Docker image with the specified build options.
+//
+// It waits until no more builds for the specified tag are ongoing to avoid
+// duplicate builds and reuse cached results. If a build for the same tag is
+// ongoing, it waits until the build is done. If there are no ongoing builds for
+// the specified tag, it builds the image using the engine.
+//
+// Once the build is started, the ongoing build is tracked. This ensures that the
+// build is not started multiple times for the same tag.
 func (engine *engine) ImageBuild(ctx context.Context, buildOptions ImageBuildOptions) error {
-	// Wait until no more builds for this tag are ongoing in order to avoid duplicate
-	// builds and reuse cached results.
+	// Wait until no more builds for this tag are ongoing to avoid duplicate builds
+	// and reuse cached results.
 	engine.buildsInProgressByTagCond.L.Lock()
 	if _, ok := engine.buildsInProgressByTag[buildOptions.Tag]; ok {
 		engine.logger.Debug("delay image build due to ongoing build", zap.String("image_tag", buildOptions.Tag))
-		// Wait until build done.
+		// Wait until the build is done.
 		for {
 			if _, ok := engine.buildsInProgressByTag[buildOptions.Tag]; !ok {
 				break
@@ -228,6 +257,8 @@ func (engine *engine) ImageBuild(ctx context.Context, buildOptions ImageBuildOpt
 	return engine.client.imageBuild(ctx, buildOptions)
 }
 
+// CreateContainer creates a container with the given container configuration. It
+// returns the ID of the created container and an error, if any.
 func (engine *engine) CreateContainer(ctx context.Context, containerConfig Config) (string, error) {
 	createdContainer, err := engine.client.createContainer(ctx, containerConfig)
 	if err != nil {
@@ -241,6 +272,8 @@ func (engine *engine) CreateContainer(ctx context.Context, containerConfig Confi
 	return createdContainer.id, nil
 }
 
+// StartContainer starts a container with the specified container ID. It logs
+// container start and error details if the container exits with an error.
 func (engine *engine) StartContainer(ctx context.Context, containerID string) error {
 	container := engine.createdContainerByID(containerID)
 	container.logger.Debug("start container")
@@ -317,6 +350,7 @@ func (engine *engine) StartContainer(ctx context.Context, containerID string) er
 	return nil
 }
 
+// ContainerIP returns the IP address of the container identified by given ID.
 func (engine *engine) ContainerIP(ctx context.Context, containerID string) (string, error) {
 	container := engine.createdContainerByID(containerID)
 	ip, err := engine.client.containerIP(ctx, containerID)
@@ -326,6 +360,8 @@ func (engine *engine) ContainerIP(ctx context.Context, containerID string) (stri
 	return ip, nil
 }
 
+// ContainerStdin returns an io.WriteCloser that can be used to attach to a
+// container's stdin.
 func (engine *engine) ContainerStdin(ctx context.Context, containerID string) (io.WriteCloser, error) {
 	container := engine.createdContainerByID(containerID)
 	stdin, err := engine.client.containerStdin(ctx, containerID)
@@ -335,6 +371,8 @@ func (engine *engine) ContainerStdin(ctx context.Context, containerID string) (i
 	return stdin, nil
 }
 
+// ContainerStdoutLogs returns the stdout logs for the specified container. It
+// attaches to the container's stdout logs using the engine client.
 func (engine *engine) ContainerStdoutLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
 	container := engine.createdContainerByID(containerID)
 	stdoutLogs, err := engine.client.containerStdoutLogs(ctx, containerID)
@@ -344,6 +382,7 @@ func (engine *engine) ContainerStdoutLogs(ctx context.Context, containerID strin
 	return stdoutLogs, nil
 }
 
+// ContainerStderrLogs returns the stderr logs for the specified container.
 func (engine *engine) ContainerStderrLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
 	container := engine.createdContainerByID(containerID)
 	stderrLogs, err := engine.client.containerStderrLogs(ctx, containerID)
@@ -353,6 +392,7 @@ func (engine *engine) ContainerStderrLogs(ctx context.Context, containerID strin
 	return stderrLogs, nil
 }
 
+// StopContainer stops the container with the specified ID.
 func (engine *engine) StopContainer(ctx context.Context, containerID string) error {
 	container := engine.createdContainerByID(containerID)
 	container.logger.Debug("stop container")
@@ -364,6 +404,7 @@ func (engine *engine) StopContainer(ctx context.Context, containerID string) err
 	return nil
 }
 
+// WaitForContainerStopped waits for the specified container to be stopped.
 func (engine *engine) WaitForContainerStopped(ctx context.Context, containerID string) error {
 	container := engine.createdContainerByID(containerID)
 	result := engine.client.waitForContainerStopped(ctx, containerID)
@@ -373,6 +414,7 @@ func (engine *engine) WaitForContainerStopped(ctx context.Context, containerID s
 	return nil
 }
 
+// RemoveContainer removes a container with the specified containerID.
 func (engine *engine) RemoveContainer(ctx context.Context, containerID string) error {
 	container := engine.createdContainerByID(containerID)
 	container.logger.Debug("remove container")
@@ -384,6 +426,8 @@ func (engine *engine) RemoveContainer(ctx context.Context, containerID string) e
 	return nil
 }
 
+// RunContainer runs a container with the given container configuration. It
+// blocks until the container has exited.
 func (engine *engine) RunContainer(ctx context.Context, containerConfig Config) error {
 	containerID, err := engine.CreateContainer(ctx, containerConfig)
 	if err != nil {
