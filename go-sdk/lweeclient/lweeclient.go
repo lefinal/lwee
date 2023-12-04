@@ -32,7 +32,14 @@ type Client interface {
 	Lifetime() context.Context
 	RequestInputStream(streamName string) (InputReader, error)
 	ProvideOutputStream(streamName string) (OutputWriter, error)
-	Do(func(ctx context.Context) error)
+	// Go is a helper method for allowing simplified error handling and usage of the
+	// client's context. Behavior is similar to the one of the well-known errgroup.
+	// The given function will be run concurrently. The provided context is the
+	// client's lifetime context. If a non-nil error is returned, the client is shut
+	// down as the operation is considered failed. Call this prior to Serve.
+	Go(func(ctx context.Context) error)
+	// Serve the HTTP API for LWEE. This will block until LWEE instructs the client
+	// to shut down and all goroutines from Go are done.
 	Serve() error
 }
 
@@ -165,7 +172,7 @@ type client struct {
 	outputBufferSize          int
 	inputStreamsByStreamName  map[string]*inputStream
 	outputStreamsByStreamName map[string]*outputStream
-	doFns                     sync.WaitGroup
+	goFns                     sync.WaitGroup
 	m                         sync.Mutex
 }
 
@@ -269,15 +276,18 @@ func (c *client) ProvideOutputStream(streamName string) (OutputWriter, error) {
 	return stream, nil
 }
 
-func (c *client) Do(fn func(ctx context.Context) error) {
+// Go runs the provided function concurrently. It is similar to the well-known
+// errgroup but passes the client's lifetime context. It also shuts down the
+// client if the returned error is non-nil.
+func (c *client) Go(fn func(ctx context.Context) error) {
 	c.m.Lock()
 	defer c.m.Unlock()
-	c.doFns.Add(1)
+	c.goFns.Add(1)
 	go func() {
-		defer c.doFns.Done()
+		defer c.goFns.Done()
 		start := time.Now()
-		c.logger.Debug("start do-fn")
-		defer c.logger.Debug("do-fn done", zap.Duration("took", time.Since(start)))
+		c.logger.Debug("start go-fn")
+		defer c.logger.Debug("go-fn done", zap.Duration("took", time.Since(start)))
 		err := fn(c.lifetime)
 		c.m.Lock()
 		defer c.m.Unlock()
@@ -312,7 +322,7 @@ func (c *client) Serve() error {
 	if err != nil {
 		return meh.Wrap(err, "serve", meh.Details{"listen_addr": listenAddr})
 	}
-	c.doFns.Wait()
+	c.goFns.Wait()
 	return nil
 }
 

@@ -27,7 +27,7 @@ func main() {
 	defer entryCountOutput.Close(nil)
 
 	// Process your data. // TODO: Replace with your own implementation.
-	client.Do(func(ctx context.Context) error {
+	client.Go(func(ctx context.Context) error {
 		// Read and count entries.
 		err = entriesInput.WaitForOpen(ctx)
 		if err != nil {
