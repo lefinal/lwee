@@ -25,7 +25,7 @@ func (suite *FindContextDirSuite) mkdirAll(dir string) {
 }
 
 func (suite *FindContextDirSuite) initProject(dir string) {
-	l, err := New(dir, flowFilename)
+	l, err := New(dir, path.Join(dir, flowFilename))
 	suite.Require().NoError(err, "new locator should not fail")
 	err = l.InitProject(zap.NewNop())
 	suite.Require().NoError(err, "init project should not fail")
