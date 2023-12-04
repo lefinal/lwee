@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"github.com/lefinal/lwee/go-sdk/lweeclient"
 	"io"
 	"log"
@@ -31,7 +32,7 @@ func main() {
 		// Read and count entries.
 		err := entriesInput.WaitForOpen(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("wait for entries input to open: %w", err)
 		}
 		scanner := bufio.NewScanner(entriesInput)
 		entryCount := 0
@@ -40,16 +41,16 @@ func main() {
 		}
 		err = scanner.Err()
 		if err != nil {
-			return err
+			return fmt.Errorf("read entries input: %w", err)
 		}
 		// Write result.
 		err = entryCountOutput.Open()
 		if err != nil {
-			return err
+			return fmt.Errorf("open entry count output: %w", err)
 		}
 		_, err = io.Copy(entryCountOutput, strings.NewReader(strconv.Itoa(entryCount)))
 		if err != nil {
-			return err
+			return fmt.Errorf("output entry count: %w", err)
 		}
 		entryCountOutput.Close(nil)
 		return nil
