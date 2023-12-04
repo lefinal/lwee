@@ -60,7 +60,7 @@ jobs:
       - name: Memory sanitization
         run: make msan
 
-  lint:
+  lint-go-sdk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -74,10 +74,29 @@ jobs:
         run: make dep
 
       - name: Install revive
-        run: go install github.com/mgechev/revive@latest
+        run: go install github.com/mgechev/revive@v1.3.4
 
       - name: Lint
-        run: make lint
+        run: revive -config ./go-sdk/revive.toml -formatter stylish ./go-sdk/...
+
+  lint-lwee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21
+
+      - name: Install Deps
+        run: make dep
+
+      - name: Install revive
+        run: go install github.com/mgechev/revive@v1.3.4
+
+      - name: Lint
+        run: revive -config ./lwee/revive.toml -formatter stylish --exclude ./lwee/e2e/... ./lwee/...
 
   code_coverage:
     runs-on: ubuntu-latest
