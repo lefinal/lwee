@@ -14,23 +14,47 @@ import (
 	"time"
 )
 
-const EnvDebug = "LWEE_DEBUG"
 const DefaultOutputBufferSize = 16 * 1024 * 1024 // 16MB
+const DefaultListenAddr = ":17733"
 
+// InputReader allows reading an input LWEE stream. Before reading, make sure to
+// call WaitForOpen.
 type InputReader interface {
+	// WaitForOpen waits until the input is being opened or the given context is
+	// done.
 	WaitForOpen(ctx context.Context) error
 	io.Reader
 }
 
+// OutputWriter allows writing an output LWEE stream. Before writing, make sure
+// to call Open to notify receivers that output data is ready now. Then write
+// your data as usual. When you are done, call Close.
 type OutputWriter interface {
 	io.Writer
+	// Open notifies receivers that the output data is now ready to be transmitted.
+	// Remember to call Open before writing any data!
 	Open() error
+	// Close the output stream. Remember to call this when all data is written.
+	// Otherwise, LWEE will wait for more data to be transmitted. When the operation
+	// and transmission were successful, call it with nil. Otherwise, you pass a
+	// non-nil error to notify LWEE that execution failed.
 	Close(err error)
 }
 
+// Client acts as an LWEE streams target by requesting input streams and
+// providing output streams from and to LWEE. Create one with New and call Serve
+// to launch an HTTP API that allows LWEE to communicate with the target.
+//
+// Note: In the future, more methods may be added to Client.
 type Client interface {
+	// Lifetime returns the Client's context that will be done once the client is
+	// shutting down.
 	Lifetime() context.Context
+	// RequestInputStream requests the stream with the given name from LWEE. Call
+	// this prior to Serve. Make sure to fully read from the stream once open.
 	RequestInputStream(streamName string) (InputReader, error)
+	// ProvideOutputStream provides the stream with the given name to LWEE. Call this
+	// prior to Serve. Make sure to close the OutputWriter once you are done.
 	ProvideOutputStream(streamName string) (OutputWriter, error)
 	// Go is a helper method for allowing simplified error handling and usage of the
 	// client's context. Behavior is similar to the one of the well-known errgroup.
@@ -70,6 +94,7 @@ func newInputStream(logger *zap.Logger) *inputStream {
 	}
 }
 
+// WaitForOpen waits until the state is open or the given context is done.
 func (input *inputStream) WaitForOpen(ctx context.Context) error {
 	input.logger.Debug("wait for open")
 	open := make(chan struct{})
@@ -93,6 +118,7 @@ func (input *inputStream) WaitForOpen(ctx context.Context) error {
 	return nil
 }
 
+// Read for implementing the io.Reader interface.
 func (input *inputStream) Read(p []byte) (n int, err error) {
 	return input.readerForApp.Read(p)
 }
@@ -163,6 +189,9 @@ func (output *outputStream) Close(err error) {
 	output.stateCond.Broadcast()
 }
 
+// client actually is more like a server because of communicating with LWEE by
+// serving an HTTP API but there are many clients and only one LWEE instance, so
+// we call this client. Create a new one with New and call Serve to start.
 type client struct {
 	logger                    *zap.Logger
 	lifetime                  context.Context
@@ -176,39 +205,45 @@ type client struct {
 	m                         sync.Mutex
 }
 
+// Options for creating a Client with New.
 type Options struct {
-	Logger           *zap.Logger
-	ListenAddr       string
+	// Optional logger to use. If not provided, a new debug logger will be created.
+	Logger *zap.Logger
+	// ListenAddr is the address under which to serve the HTTP API. Usually, you
+	// should not overwrite this as LWEE expects the port from DefaultListenAddr.
+	// However, this might be useful for debugging or development purposes.
+	ListenAddr string
+	// OutputBufferSize is the buffer size for output streams.
 	OutputBufferSize int
 }
 
+// New creates a new Client with the given Options. Start it with Client.Serve.
 func New(options Options) Client {
 	const minBufferSize = 32 * 1024
 	if options.OutputBufferSize <= minBufferSize {
 		options.OutputBufferSize = DefaultOutputBufferSize
 	}
 	lifetime, cancel := context.WithCancelCause(waitforterminate.Lifetime(context.Background()))
+	if options.Logger == nil {
+		options.Logger, _ = NewLogger(zap.DebugLevel)
+	}
+	if options.ListenAddr == "" {
+		options.ListenAddr = DefaultListenAddr
+	}
 	c := &client{
 		lifetime:                  lifetime,
 		cancel:                    cancel,
-		logger:                    zap.NewNop(),
+		logger:                    options.Logger,
 		serving:                   false,
-		listenAddr:                ":17733",
+		listenAddr:                options.ListenAddr,
 		outputBufferSize:          options.OutputBufferSize,
 		inputStreamsByStreamName:  make(map[string]*inputStream),
 		outputStreamsByStreamName: make(map[string]*outputStream),
 	}
-	if options.Logger == nil {
-		c.logger, _ = NewLogger(zap.DebugLevel)
-	}
-	if options.ListenAddr != "" {
-		c.listenAddr = options.ListenAddr
-	}
 	return c
 }
 
-// NewLogger creates a new zap.Logger. Don't forget to call Sync() on the
-// returned logged before exiting!
+// NewLogger creates a new zap.Logger.
 func NewLogger(level zapcore.Level) (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
 	config.OutputPaths = []string{"stderr", "/tmp/lwee.log"}
@@ -299,6 +334,7 @@ func (c *client) Go(fn func(ctx context.Context) error) {
 	}()
 }
 
+// Serve the HTTP API until a shutdown-request is received from LWEE.
 func (c *client) Serve() error {
 	c.m.Lock()
 	listenAddr := c.listenAddr
@@ -326,10 +362,13 @@ func (c *client) Serve() error {
 	return nil
 }
 
+// shutdown the client by cancelling lifetime. shutdown will not block. Instead,
+// wait for Serve to return.
 func (c *client) shutdown() {
 	c.cancel(nil)
 }
 
+// ioSummary returns the ioSummary of input and output streams in the client.
 func (c *client) ioSummary() (ioSummary, error) {
 	c.m.Lock()
 	defer c.m.Unlock()
@@ -347,6 +386,13 @@ func (c *client) ioSummary() (ioSummary, error) {
 	return summary, nil
 }
 
+// readInputStream reads data from the given reader and copies it to the
+// inputStream.writerForServer. It also handles the state transition of the
+// inputStream. If the inputStream state is not inputStreamStateWaitForOpen, it
+// returns a meh.NewBadInputErr. If the inputStream is not found in the client's
+// inputStreamsByStreamName map, it returns a meh.NewNotFoundErr. If there is an
+// error while copying data, it returns a meh.NewInternalErrFromErr. Otherwise,
+// it returns nil.
 func (c *client) readInputStream(streamName string, reader io.Reader) error {
 	c.m.Lock()
 	stream, ok := c.inputStreamsByStreamName[streamName]
@@ -379,6 +425,8 @@ func (c *client) readInputStream(streamName string, reader io.Reader) error {
 	return nil
 }
 
+// outputStreamByName returns an output stream with the given name. If the stream
+// is not found, it returns an error with code meh.ErrNotFound.
 func (c *client) outputStreamByName(streamName string) (*outputStream, error) {
 	c.m.Lock()
 	defer c.m.Unlock()

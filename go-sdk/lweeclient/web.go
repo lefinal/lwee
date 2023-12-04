@@ -34,7 +34,7 @@ func ginHandlerFunc(logger *zap.Logger, fn handlerFunc) gin.HandlerFunc {
 }
 
 // logAndRespondError logs the given meh.Error and responds using the status code
-// mapping set via mehhttp.HTTPStatusCode. The responded message will hold the
+// mapping set via mehhttp.HTTPStatusCode. The responding message will hold the
 // error message. This is similar to mehgin.LogAndRespondError but uses the error
 // message as body.
 func logAndRespondError(logger *zap.Logger, c *gin.Context, e error) {
@@ -89,6 +89,7 @@ type serverHandler interface {
 	outputStreamByName(streamName string) (*outputStream, error)
 }
 
+// server provides an HTTP API for usage with LWEE streams.
 type server struct {
 	logger     *zap.Logger
 	listenAddr string
@@ -97,6 +98,8 @@ type server struct {
 	httpServer *http.Server
 }
 
+// newServer creates a new server with routes being set up. Call server.serve to
+// start the HTTP API.
 func newServer(logger *zap.Logger, listenAddr string, handler serverHandler) *server {
 	gin.SetMode(gin.ReleaseMode)
 	s := &server{
@@ -114,6 +117,7 @@ func newServer(logger *zap.Logger, listenAddr string, handler serverHandler) *se
 	return s
 }
 
+// serve the HTTP API until the given context is done.
 func (s *server) serve(ctx context.Context) error {
 	s.httpServer = &http.Server{
 		Addr:              s.listenAddr,
@@ -146,6 +150,8 @@ func (s *server) serve(ctx context.Context) error {
 	return nil
 }
 
+// handleGetIO handles an HTTP request for the I/O summary. It returns a list of
+// requested input streams and provided output streams.
 func (s *server) handleGetIO() handlerFunc {
 	return func(c *gin.Context) error {
 		var response struct {
@@ -199,7 +205,7 @@ func (s *server) handleRequestOutputStream() handlerFunc {
 		currentStreamState := stream.state
 		currentWriterErr := stream.writerErr
 		stream.stateCond.L.Unlock()
-		// Respond according to stream state.
+		// Respond, according to stream state.
 		switch currentStreamState {
 		case outputStreamStateWaitForOpen:
 			// Wait until stream is not waiting for open anymore.
@@ -234,8 +240,7 @@ func (s *server) handleShutdown() handlerFunc {
 		c.Status(http.StatusOK)
 		go func() {
 			<-c.Request.Context().Done()
-			// Shutdown the server properly in order to wait until connection to LWEE is
-			// closed.
+			// Shutdown the server properly to wait until the connection to LWEE is closed.
 			_ = s.httpServer.Shutdown(context.Background())
 			s.handler.shutdown()
 		}()
