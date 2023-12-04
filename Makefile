@@ -3,8 +3,8 @@
 all: dep test race msan lint
 
 lint: ## Lint the files
-	(cd ./lwee && revive -config ../revive.toml ./...)
-	(cd ./go-sdk && revive -config ../revive.toml ./...)
+	docker run --rm -v ./lwee:/var/lwee ghcr.io/mgechev/revive:v1.3.4 -config /var/lwee/revive.toml -formatter stylish /var/lwee/...
+	docker run --rm -v ./go-sdk:/var/go-sdk ghcr.io/mgechev/revive:v1.3.4 -config /var/go-sdk/revive.toml -formatter stylish /var/go-sdk/...
 
 test: ## Run unittests
 	(cd ./lwee && go test -tags=e2e -v ./...)
