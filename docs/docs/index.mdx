@@ -15,12 +15,28 @@ Make sure to have [Docker](https://docs.docker.com/engine/install/) installed.
 
 Get started by downloading the latest version of LWEE from the [releases page](https://github.com/lefinal/lwee/releases).
 
-Work in Progress.
+On Linux:
 
-[//]: # (TODO)
+```shell
+sudo mv /path/to/downloaded/binary /usr/local/bin
+```
 
-[//]: # (TODO: Add instructions regarding project initialization)
+On any other operating system, move the binary to a location that is in your PATH.
+
+## Project initialization
+
+Create a new LWEE project in the current folder with:
+
+```shell
+lwee init
+```
 
 ## Project structure
 
-[//]: # (TODO)
+An LWEE project consists of these files:
+
+- `_.lwee_: LWEE internal folder. Also marks an LWEE project.
+- _actions_: Directory for project actions.
+- _out_: Output directory.
+- _src_: Source data.
+- _flow.yaml_: Default flow.
