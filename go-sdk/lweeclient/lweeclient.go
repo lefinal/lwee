@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"io"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -69,6 +70,25 @@ type Client interface {
 	// Serve the HTTP API for LWEE. This will block until LWEE instructs the client
 	// to shut down and all goroutines from Go are done.
 	Serve() error
+}
+
+type buildSettings struct {
+	revision string
+	time     time.Time
+}
+
+func parseBuildSettings() buildSettings {
+	buildInfo, _ := debug.ReadBuildInfo()
+	settings := buildSettings{}
+	for _, setting := range buildInfo.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			settings.revision = setting.Value
+		case "vc.time":
+			settings.time, _ = time.Parse(time.RFC3339, setting.Value)
+		}
+	}
+	return settings
 }
 
 type inputStreamState string
@@ -244,6 +264,8 @@ func New(options Options) Client {
 		inputStreamsByStreamName:  make(map[string]*inputStream),
 		outputStreamsByStreamName: make(map[string]*outputStream),
 	}
+	build := parseBuildSettings()
+	c.logger.Debug("lwee go sdk initialized", zap.String("version", build.revision), zap.Time("build_time", build.time))
 	return c
 }
 
