@@ -41,6 +41,12 @@
     [
       "@semantic-release/exec",
       {
+        "prepareCmd": "(cd ./lwee && go mod download)"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
         "prepareCmd": "(cd ./lwee && GOOS=linux GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-linux-amd64)"
       }
     ],
