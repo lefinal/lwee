@@ -53,10 +53,6 @@
           {
             "path": "lwee/lwee",
             "label": "lwee-v${nextRelease.version}-amd64"
-          },
-          {
-            "path": "docs/build",
-            "label": "lwee-docs-v${nextRelease.version}.zip"
           }
         ]
       }
