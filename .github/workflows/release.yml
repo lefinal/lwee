@@ -31,6 +31,9 @@ jobs:
       - name: Install LWEE dependencies
         run: make dep
 
+      - name: Install dependencies for semantic-release
+        run: npm install @semantic-release/github @semantic-release/changelog @semantic-release/git @semantic-release/npm @semantic-release/exec
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
