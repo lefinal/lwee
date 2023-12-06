@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -271,9 +271,9 @@ func (lwee *LWEE) writeRunInfoResult() error {
 		return meh.Wrap(err, "get run info result", nil)
 	}
 	filename := lwee.Locator.RunInfoYAMLFilename()
-	err = locator.CreateDirIfNotExists(path.Dir(filename))
+	err = locator.CreateDirIfNotExists(filepath.Dir(filename))
 	if err != nil {
-		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": path.Dir(filename)})
+		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": filepath.Dir(filename)})
 	}
 	err = os.WriteFile(filename, runInfoResult, 0600)
 	if err != nil {

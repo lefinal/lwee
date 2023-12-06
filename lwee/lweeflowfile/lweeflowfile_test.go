@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -177,11 +177,11 @@ func TestFlowInputFile_Validate(t *testing.T) {
 	t.Parallel()
 
 	// Create temporary file.
-	filename := path.Join(t.TempDir(), "my.txt")
+	filename := filepath.Join(t.TempDir(), "my.txt")
 	err := os.WriteFile(filename, []byte("Hello World!"), 0600)
 	require.NoError(t, err, "create temporary file should not fail")
 	// We prepend a few times "../" to avoid the warning for absolute paths.
-	filenameNonAbsolute := path.Join(strings.Repeat("../", 512), filename)
+	filenameNonAbsolute := filepath.Join(strings.Repeat("../", 512), filename)
 
 	tests := []validateTest[FlowInputFile]{
 		{

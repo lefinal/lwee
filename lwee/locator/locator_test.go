@@ -4,7 +4,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 )
 
@@ -25,7 +25,7 @@ func (suite *FindContextDirSuite) mkdirAll(dir string) {
 }
 
 func (suite *FindContextDirSuite) initProject(dir string) {
-	l, err := New(dir, path.Join(dir, flowFilename))
+	l, err := New(dir, filepath.Join(dir, flowFilename))
 	suite.Require().NoError(err, "new locator should not fail")
 	err = l.InitProject(zap.NewNop())
 	suite.Require().NoError(err, "init project should not fail")
@@ -45,7 +45,7 @@ func (suite *FindContextDirSuite) TestStartDirIsProject() {
 }
 
 func (suite *FindContextDirSuite) TestChildDirIsProject() {
-	dir := path.Join(suite.startDir, "my-sub-dir")
+	dir := filepath.Join(suite.startDir, "my-sub-dir")
 	suite.mkdirAll(dir)
 	suite.initProject(dir)
 
@@ -55,7 +55,7 @@ func (suite *FindContextDirSuite) TestChildDirIsProject() {
 }
 
 func (suite *FindContextDirSuite) TestParentDirIsProject() {
-	dir := path.Join(suite.startDir, "my-sub-dir")
+	dir := filepath.Join(suite.startDir, "my-sub-dir")
 	suite.mkdirAll(dir)
 	suite.initProject(suite.startDir)
 
@@ -65,7 +65,7 @@ func (suite *FindContextDirSuite) TestParentDirIsProject() {
 }
 
 func (suite *FindContextDirSuite) TestParentParentDirIsProject() {
-	dir := path.Join(suite.startDir, "my-sub-dir", "my-sub-sub")
+	dir := filepath.Join(suite.startDir, "my-sub-dir", "my-sub-sub")
 	suite.mkdirAll(dir)
 	suite.initProject(suite.startDir)
 

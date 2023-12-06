@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -32,7 +32,7 @@ func (suite *featuresSuite) SetupTest() {
 }
 
 func (suite *featuresSuite) TearDownTest() {
-	_ = os.RemoveAll(path.Join(suite.e2eConfig.contextDir, "out"))
+	_ = os.RemoveAll(filepath.Join(suite.e2eConfig.contextDir, "out"))
 }
 
 func (suite *featuresSuite) TestEnvWithProjectAction() {
@@ -43,7 +43,7 @@ func (suite *featuresSuite) TestEnvWithProjectAction() {
 	suite.Require().NoError(err, "run should not fail")
 
 	// Check file.
-	got, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	got, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read result file should not fail")
 	suite.Equal(expect, string(got), "should have written correct result")
 }
@@ -78,7 +78,7 @@ func (suite *featuresSuite) TestEnvWithImageRunner() {
 	suite.Require().NoError(err, "run should not fail")
 
 	// Check file.
-	got, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	got, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read result file should not fail")
 	suite.Contains(string(got), expect, "should have written correct result")
 }
@@ -95,7 +95,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationFlowOutputFile() {
 	suite.Require().NoError(err, "run should not fail")
 
 	// Assure the output file is not empty.
-	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	resultRaw, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read output file should not fail")
 	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
 
@@ -127,7 +127,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationImageWorkspaceFile() {
 	suite.Require().NoError(err, "run should not fail")
 
 	// Assure the output file is not empty.
-	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	resultRaw, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read output file should not fail")
 	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
 
@@ -159,7 +159,7 @@ func (suite *featuresSuite) TestFileCopyOptimizationProjectActionWorkspaceFile()
 	suite.Require().NoError(err, "run should not fail")
 
 	// Assure the output file is not empty.
-	resultRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
+	resultRaw, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, "out", "result.txt"))
 	suite.Require().NoError(err, "read output file should not fail")
 	suite.Len(strings.Split(string(resultRaw), "\n"), expectedLines+1, "should have written correct lines")
 

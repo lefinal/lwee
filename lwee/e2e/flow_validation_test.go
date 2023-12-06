@@ -3,7 +3,7 @@ package e2e
 import (
 	"github.com/stretchr/testify/suite"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 )
 
@@ -21,7 +21,7 @@ func (suite *flowValidationSuite) SetupTest() {
 }
 
 func (suite *flowValidationSuite) TearDownTest() {
-	_ = os.RemoveAll(path.Join(suite.e2eConfig.contextDir, "out"))
+	_ = os.RemoveAll(filepath.Join(suite.e2eConfig.contextDir, "out"))
 }
 
 func (suite *flowValidationSuite) TestOK() {

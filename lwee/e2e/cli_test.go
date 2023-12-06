@@ -3,7 +3,7 @@ package e2e
 import (
 	"github.com/stretchr/testify/suite"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 )
 
@@ -44,7 +44,7 @@ func (suite *cliSuite) TestManualDir() {
 	err := os.Chdir("/tmp")
 	suite.Require().NoError(err, "cd to /tmp should not fail")
 
-	suite.e2eConfig.contextDir = path.Join(suite.originalWorkdir, suite.e2eConfig.contextDir)
+	suite.e2eConfig.contextDir = filepath.Join(suite.originalWorkdir, suite.e2eConfig.contextDir)
 
 	err = run(suite.T(), suite.e2eConfig)
 	suite.NoError(err, "should not fail")
@@ -52,8 +52,8 @@ func (suite *cliSuite) TestManualDir() {
 
 func (suite *cliSuite) TestAbsFlowFilename() {
 	// Copy flow file to another directory.
-	newFlowFilename := path.Join(suite.T().TempDir(), "my-external-flow.yaml")
-	srcFlowFileRaw, err := os.ReadFile(path.Join(suite.e2eConfig.contextDir, suite.e2eConfig.flowFilename))
+	newFlowFilename := filepath.Join(suite.T().TempDir(), "my-external-flow.yaml")
+	srcFlowFileRaw, err := os.ReadFile(filepath.Join(suite.e2eConfig.contextDir, suite.e2eConfig.flowFilename))
 	suite.Require().NoError(err, "read original flow file should not fail")
 	err = os.WriteFile(newFlowFilename, srcFlowFileRaw, 0644)
 	suite.Require().NoError(err, "write new flow file should not fail")
@@ -91,7 +91,7 @@ func (suite *cliSuite) TestNoContextDirButIsInWorkingDir() {
 }
 
 func (suite *cliSuite) TestNoContextDirButIsInParentDir() {
-	err := os.Chdir(path.Join(suite.e2eConfig.contextDir, "actions"))
+	err := os.Chdir(filepath.Join(suite.e2eConfig.contextDir, "actions"))
 	suite.Require().NoError(err, "cd to actions dir in context dir should not fail")
 
 	suite.e2eConfig.contextDir = ""
@@ -124,8 +124,8 @@ func (suite *cliSuite) TestInitInWorkdir() {
 	err = run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "should not fail")
 
-	suite.FileExists(path.Join(tempDir, "flow.yaml"))
-	suite.DirExists(path.Join(tempDir, "actions"))
+	suite.FileExists(filepath.Join(tempDir, "flow.yaml"))
+	suite.DirExists(filepath.Join(tempDir, "actions"))
 }
 
 func (suite *cliSuite) TestInitInWorkdirWithManualFlowFilename() {
@@ -141,8 +141,8 @@ func (suite *cliSuite) TestInitInWorkdirWithManualFlowFilename() {
 	err = run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "should not fail")
 
-	suite.FileExists(path.Join(tempDir, suite.e2eConfig.flowFilename))
-	suite.DirExists(path.Join(tempDir, "actions"))
+	suite.FileExists(filepath.Join(tempDir, suite.e2eConfig.flowFilename))
+	suite.DirExists(filepath.Join(tempDir, "actions"))
 }
 
 func (suite *cliSuite) TestInitInManualDir() {
@@ -154,8 +154,8 @@ func (suite *cliSuite) TestInitInManualDir() {
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "should not fail")
 
-	suite.FileExists(path.Join(suite.e2eConfig.contextDir, "flow.yaml"))
-	suite.DirExists(path.Join(suite.e2eConfig.contextDir, "actions"))
+	suite.FileExists(filepath.Join(suite.e2eConfig.contextDir, "flow.yaml"))
+	suite.DirExists(filepath.Join(suite.e2eConfig.contextDir, "actions"))
 }
 
 func (suite *cliSuite) TestInitInManualDirWithManualFlowFilename() {
@@ -167,8 +167,8 @@ func (suite *cliSuite) TestInitInManualDirWithManualFlowFilename() {
 	err := run(suite.T(), suite.e2eConfig)
 	suite.Require().NoError(err, "should not fail")
 
-	suite.FileExists(path.Join(suite.e2eConfig.contextDir, suite.e2eConfig.flowFilename))
-	suite.DirExists(path.Join(suite.e2eConfig.contextDir, "actions"))
+	suite.FileExists(filepath.Join(suite.e2eConfig.contextDir, suite.e2eConfig.flowFilename))
+	suite.DirExists(filepath.Join(suite.e2eConfig.contextDir, "actions"))
 }
 
 func TestCLI(t *testing.T) {

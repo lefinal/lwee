@@ -1,7 +1,7 @@
 package locator
 
 import (
-	"path"
+	"path/filepath"
 )
 
 const (
@@ -12,8 +12,8 @@ const (
 // ProjectActionDirByAction returns the directory path of the specified action in
 // the project.
 func (locator *Locator) ProjectActionDirByAction(actionName string) string {
-	actionsDir := path.Join(locator.contextDir, actionsDir)
-	return path.Join(actionsDir, actionName)
+	actionsDir := filepath.Join(locator.contextDir, actionsDir)
+	return filepath.Join(actionsDir, actionName)
 }
 
 // ProjectActionLocatorByAction returns a new ProjectActionLocator initialized
@@ -35,5 +35,5 @@ func (locator *ProjectActionLocator) ActionDir() string {
 
 // ActionFilename returns the path of the action file for the action.
 func (locator *ProjectActionLocator) ActionFilename() string {
-	return path.Join(locator.actionDir, actionFilename)
+	return filepath.Join(locator.actionDir, actionFilename)
 }

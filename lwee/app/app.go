@@ -14,7 +14,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime/debug"
 	"time"
 )
@@ -282,8 +282,8 @@ func newLocator(logger *zap.Logger, contextDir string, flowFilename string, sear
 			contextDir = currentWorkingDirectory
 		}
 	}
-	if !path.IsAbs(flowFilename) {
-		flowFilename = path.Join(contextDir, flowFilename)
+	if !filepath.IsAbs(flowFilename) {
+		flowFilename = filepath.Join(contextDir, flowFilename)
 	}
 	logger.Debug("set up locator", zap.String("context_dir", contextDir), zap.String("flow_filename", flowFilename))
 	appLocator, err := locator.New(contextDir, flowFilename)

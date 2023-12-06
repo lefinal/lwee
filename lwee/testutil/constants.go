@@ -9,7 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -121,7 +121,7 @@ func TestMapperWithConstExtractionFromDir[From ~string, To ~string](t *testing.T
 	require.NoError(t, err, "reading files from directory should not fail")
 	astFiles := make([]*ast.File, 0, len(files))
 	for _, fileInfo := range files {
-		f, err := readAstFile(path.Join(dir, fileInfo.Name()))
+		f, err := readAstFile(filepath.Join(dir, fileInfo.Name()))
 		if err != nil {
 			require.NoError(t, err, "read ast file", nil)
 		}

@@ -11,7 +11,7 @@ import (
 	"github.com/lefinal/meh"
 	"go.uber.org/zap"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -55,7 +55,7 @@ func (factory *Factory) newProjectAction(base *base, renderData templaterender.D
 			actionConfig.File = "Dockerfile"
 		}
 		// Render action runner details.
-		workspaceHostDir := path.Join(factory.Locator.ActionTempDirByAction(base.actionName), "container-workspace")
+		workspaceHostDir := filepath.Join(factory.Locator.ActionTempDirByAction(base.actionName), "container-workspace")
 		workspaceMountDir := factory.Locator.ContainerWorkspaceMountDir()
 		renderData.Action.Extras = projectActionExtraRenderData{
 			WorkspaceHostDir:  workspaceHostDir,

@@ -16,7 +16,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -184,7 +183,7 @@ func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.Actio
 	if filepath.IsAbs(input.Filename) {
 		return inputIngestionRequestWithIngestor{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": input.Filename})
 	}
-	filename := path.Join(action.workspaceHostDir, input.Filename)
+	filename := filepath.Join(action.workspaceHostDir, input.Filename)
 	return inputIngestionRequestWithIngestor{
 		request: InputIngestionRequest{
 			RequireFinishUntilPhase: PhasePreStart,
@@ -209,9 +208,9 @@ func (action *imageRunner) newWorkspaceFileInputRequest(input lweeflowfile.Actio
 			}
 		},
 		ingest: func(ctx context.Context, source io.Reader) error {
-			err := os.MkdirAll(path.Dir(filename), 0750)
+			err := os.MkdirAll(filepath.Dir(filename), 0750)
 			if err != nil {
-				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
+				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": filepath.Dir(filename)})
 			}
 			f, err := os.Create(filename)
 			if err != nil {
@@ -309,7 +308,7 @@ func (action *imageRunner) newWorkspaceFileOutputOffer(output lweeflowfile.Actio
 	if filepath.IsAbs(output.Filename) {
 		return outputOfferWithOutputter{}, meh.NewBadInputErr("filename must not be absolute", meh.Details{"filename": output.Filename})
 	}
-	filename := path.Join(action.workspaceHostDir, output.Filename)
+	filename := filepath.Join(action.workspaceHostDir, output.Filename)
 	return outputOfferWithOutputter{
 		offer: OutputOffer{
 			RequireFinishUntilPhase: PhaseStopped,

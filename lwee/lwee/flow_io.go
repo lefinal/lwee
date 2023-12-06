@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"time"
 )
 
@@ -26,7 +26,7 @@ func (lwee *LWEE) registerFlowInput(ctx context.Context, inputName string, flowI
 	switch flowInput := flowInput.(type) {
 	case lweeflowfile.FlowInputFile:
 		// Simply open the file and forward it.
-		filename := path.Join(lwee.Locator.ContextDir(), flowInput.Filename)
+		filename := filepath.Join(lwee.Locator.ContextDir(), flowInput.Filename)
 		err = assureFileExists(filename)
 		if err != nil {
 			return meh.Wrap(err, "check file", meh.Details{"filename": filename})
@@ -53,8 +53,8 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 		sourceName = flowOutput.Source
 		sourceHandler = func(ctx context.Context, logger *zap.Logger, source io.Reader, availableOptimizations *actionio.AvailableOptimizations) error {
 			filename := flowOutput.Filename
-			if !path.IsAbs(filename) {
-				filename = path.Join(lwee.Locator.ContextDir(), flowOutput.Filename)
+			if !filepath.IsAbs(filename) {
+				filename = filepath.Join(lwee.Locator.ContextDir(), flowOutput.Filename)
 			}
 			// If a file is available, we simply move it.
 			if availableOptimizations.Filename != "" {
@@ -74,9 +74,9 @@ func (lwee *LWEE) registerFlowOutput(_ context.Context, outputName string, flowO
 				logger.Debug("copy source regularly due to failed move")
 			}
 			// Copy file.
-			err := os.MkdirAll(path.Dir(filename), 0760)
+			err := os.MkdirAll(filepath.Dir(filename), 0760)
 			if err != nil {
-				return meh.NewInternalErrFromErr(err, "mkdir all for output file", meh.Details{"dir": path.Dir(filename)})
+				return meh.NewInternalErrFromErr(err, "mkdir all for output file", meh.Details{"dir": filepath.Dir(filename)})
 			}
 			f, err := os.Create(filename)
 			if err != nil {

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -27,17 +27,17 @@ type config struct {
 }
 
 func run(t *testing.T, config config) error {
-	require.False(t, strings.HasPrefix(path.Clean(config.flowFilename), path.Clean(config.contextDir)),
+	require.False(t, strings.HasPrefix(filepath.Clean(config.flowFilename), filepath.Clean(config.contextDir)),
 		"broken test. if the flow filename is not absolute, the context dir will be used as base.")
 	// Assert that the context dir and flow file exist.
 	if !config.skipFileExistenceChecks {
 		_, err := os.Stat(config.contextDir)
 		require.NoError(t, err, "stat context dir should not fail")
-		if path.IsAbs(config.flowFilename) {
+		if filepath.IsAbs(config.flowFilename) {
 			_, err = os.Stat(config.flowFilename)
 			require.NoError(t, err, "stat flow file should not fail")
 		} else {
-			_, err = os.Stat(path.Join(config.contextDir, config.flowFilename))
+			_, err = os.Stat(filepath.Join(config.contextDir, config.flowFilename))
 			require.NoError(t, err, "stat flow file should not fail")
 		}
 	}

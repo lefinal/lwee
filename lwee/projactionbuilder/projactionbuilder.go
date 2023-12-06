@@ -15,7 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -135,7 +135,7 @@ func (builder *Builder) buildGoTemplate(ctx context.Context) error {
 		},
 	}
 	// Check whether we have a local Go build-cache available.
-	goBuildCacheDir := path.Join(currentUser.HomeDir, ".cache", "go-build")
+	goBuildCacheDir := filepath.Join(currentUser.HomeDir, ".cache", "go-build")
 	if _, err = os.Stat(goBuildCacheDir); err == nil {
 		builder.logger.Debug("found local go build-cache", zap.String("cache_dir", goBuildCacheDir))
 		actionVolumeMounts = append(actionVolumeMounts, container.VolumeMount{
@@ -183,7 +183,7 @@ func (builder *Builder) buildGoTemplate(ctx context.Context) error {
 	if err != nil {
 		return meh.Wrap(err, "run tidy container", nil)
 	}
-	tidyScriptFilename := path.Join(actionLocator.ActionDir(), "tidy.sh")
+	tidyScriptFilename := filepath.Join(actionLocator.ActionDir(), "tidy.sh")
 	err = os.Remove(tidyScriptFilename)
 	if err != nil {
 		return meh.NewInternalErrFromErr(err, "remove tidy script", meh.Details{"filename": tidyScriptFilename})
@@ -231,7 +231,7 @@ func (builder *Builder) buildGoTemplateNoSDK(ctx context.Context) error {
 // copyEmbedDir copies directory and files from source embedded filesystem to the
 // destination directory. It skips blacklisted files and directories.
 func copyEmbedDir(src embed.FS, srcSubDir string, dstDir string, currentDir string, blacklist []string) error {
-	currentSubDir := path.Join(srcSubDir, currentDir)
+	currentSubDir := filepath.Join(srcSubDir, currentDir)
 	dirEntries, err := src.ReadDir(currentSubDir)
 	if err != nil {
 		return meh.NewInternalErrFromErr(err, fmt.Sprintf("read source directory %q", currentSubDir), nil)
@@ -239,7 +239,7 @@ func copyEmbedDir(src embed.FS, srcSubDir string, dstDir string, currentDir stri
 	for _, dirEntry := range dirEntries {
 		// If directory, call recursively.
 		if dirEntry.IsDir() {
-			dirName := path.Join(currentDir, dirEntry.Name())
+			dirName := filepath.Join(currentDir, dirEntry.Name())
 			err = locator.CreateDirIfNotExists(dirName)
 			if err != nil {
 				return meh.Wrap(err, fmt.Sprintf("create dir %s", dirName), nil)
@@ -250,8 +250,8 @@ func copyEmbedDir(src embed.FS, srcSubDir string, dstDir string, currentDir stri
 			}
 		} else {
 			// If it is a file, copy it after checking the blacklist.
-			srcFilename := path.Join(currentSubDir, dirEntry.Name())
-			dstFilename := path.Join(dstDir, currentDir, dirEntry.Name())
+			srcFilename := filepath.Join(currentSubDir, dirEntry.Name())
+			dstFilename := filepath.Join(dstDir, currentDir, dirEntry.Name())
 			dstFilename = strings.TrimSuffix(dstFilename, ".lweetemplate") // Remove template suffix.
 			blacklisted, err := isBlacklisted(srcFilename, blacklist)
 			if err != nil {

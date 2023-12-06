@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"testing"
 )
 
@@ -21,7 +21,7 @@ func (suite *actionIODataIntegritySuite) SetupSuite() {
 	suite.contextDir = "./action-io/project-data-integrity"
 	// Go mod vendor the project action that uses the Go SDK.
 	cmd := exec.Command("go", "mod", "vendor")
-	cmd.Dir = path.Join(suite.contextDir, "actions", "copyGoSDK")
+	cmd.Dir = filepath.Join(suite.contextDir, "actions", "copyGoSDK")
 	vendorOut, err := cmd.CombinedOutput()
 	if err != nil {
 		suite.T().Logf("go mod vendor output:\n%s", vendorOut)
@@ -31,15 +31,15 @@ func (suite *actionIODataIntegritySuite) SetupSuite() {
 
 func (suite *actionIODataIntegritySuite) TearDownSuite() {
 	// Remove vendor directory from project action that uses the Go SDK.
-	err := os.RemoveAll(path.Join(suite.contextDir, "actions", "copyGoSDK", "vendor"))
+	err := os.RemoveAll(filepath.Join(suite.contextDir, "actions", "copyGoSDK", "vendor"))
 	suite.Assert().NoError(err, "remove vendor directory for copyGoSDK action should not fail")
 }
 
 func (suite *actionIODataIntegritySuite) test(flowName string) {
 	const inputSize = 50 * 1024 * 1024 // 50MB.
 	// Generate input data.
-	inputFilename := path.Join(suite.contextDir, "src/input")
-	outputFilename := path.Join(suite.contextDir, "out/output")
+	inputFilename := filepath.Join(suite.contextDir, "src/input")
+	outputFilename := filepath.Join(suite.contextDir, "out/output")
 	f, err := os.OpenFile(inputFilename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0660)
 	suite.Require().NoError(err, "open input file should not fail")
 	suite.T().Cleanup(func() {

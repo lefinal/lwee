@@ -10,7 +10,6 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -67,7 +66,7 @@ func FindContextDir(startDir string) (string, error) {
 				"current_dir": currentDir,
 			})
 		}
-		currentDir = path.Dir(currentDir)
+		currentDir = filepath.Dir(currentDir)
 	}
 }
 
@@ -89,7 +88,7 @@ func New(contextDir string, flowFilename string) (*Locator, error) {
 	if err != nil {
 		return nil, meh.Wrap(err, "get absolute path for context dir", meh.Details{"context_dir": contextDir})
 	}
-	actionTempDir := path.Join(os.TempDir(), "lwee",
+	actionTempDir := filepath.Join(os.TempDir(), "lwee",
 		time.Now().Format("2006-01-02_15-04-05")+"_"+strconv.Itoa(rand.Intn(999999)))
 	return &Locator{
 		contextDir:    contextDir,
@@ -126,7 +125,7 @@ func (locator *Locator) ContextDir() string {
 // directory and ensures it contains a .gitkeep file.
 func (locator *Locator) InitProject(logger *zap.Logger) error {
 	// Create actions directory.
-	actionsDir := path.Join(locator.contextDir, actionsDir)
+	actionsDir := filepath.Join(locator.contextDir, actionsDir)
 	logger.Debug("create actions directory", zap.String("dir", actionsDir))
 	err := os.MkdirAll(actionsDir, mkdirPerm)
 	if err != nil {
@@ -137,7 +136,7 @@ func (locator *Locator) InitProject(logger *zap.Logger) error {
 		return meh.Wrap(err, "git keep actions directory", meh.Details{"dir": actionsDir})
 	}
 	// Create sources directory.
-	sourcesDir := path.Join(locator.contextDir, sourcesDir)
+	sourcesDir := filepath.Join(locator.contextDir, sourcesDir)
 	logger.Debug("create sources directory", zap.String("dir", sourcesDir))
 	err = os.MkdirAll(sourcesDir, mkdirPerm)
 	if err != nil {
@@ -158,7 +157,7 @@ func (locator *Locator) InitProject(logger *zap.Logger) error {
 	if err != nil {
 		return meh.NewBadInputErrFromErr(err, "create lwee directory", meh.Details{"dir": locator.LWEEDir()})
 	}
-	err = os.WriteFile(path.Join(locator.LWEEDir(), ".gitkeep"), nil, filePerm)
+	err = os.WriteFile(filepath.Join(locator.LWEEDir(), ".gitkeep"), nil, filePerm)
 	if err != nil {
 		return meh.NewBadInputErrFromErr(err, "create .gitkeep in lwee directory", meh.Details{"dir": locator.LWEEDir()})
 	}
@@ -188,9 +187,9 @@ func CreateDirIfNotExists(dir string) error {
 // CreateIfNotExists checks if a file exists and creates it if not. If the file
 // already exists, it does not perform any action and returns nil.
 func CreateIfNotExists(filename string, content []byte) error {
-	err := CreateDirIfNotExists(path.Dir(filename))
+	err := CreateDirIfNotExists(filepath.Dir(filename))
 	if err != nil {
-		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": path.Dir(filename)})
+		return meh.Wrap(err, "create dir if not exists", meh.Details{"dir": filepath.Dir(filename)})
 	}
 	_, err = os.Stat(filename)
 	if err == nil {
@@ -216,13 +215,13 @@ func CreateIfNotExists(filename string, content []byte) error {
 
 // LWEEDir returns the path to the LWEE directory within the project.
 func (locator *Locator) LWEEDir() string {
-	return path.Join(locator.contextDir, lweeDir)
+	return filepath.Join(locator.contextDir, lweeDir)
 }
 
 // ActionTempDirByAction returns the temporary directory path for a specific
 // action. Make sure to create it yourself.
 func (locator *Locator) ActionTempDirByAction(actionName string) string {
-	return path.Join(locator.actionTempDir, ToAlphanumeric(actionName, '_'))
+	return filepath.Join(locator.actionTempDir, ToAlphanumeric(actionName, '_'))
 }
 
 // ActionTempDir returns the action temporary directory.
@@ -233,7 +232,7 @@ func (locator *Locator) ActionTempDir() string {
 // ActionWorkspaceDirByAction returns the workspace directory for a specific
 // action. Make sure to create it yourself.
 func (locator *Locator) ActionWorkspaceDirByAction(actionName string) string {
-	return path.Join(locator.ActionTempDirByAction(actionName), "workspace")
+	return filepath.Join(locator.ActionTempDirByAction(actionName), "workspace")
 }
 
 // ContainerWorkspaceMountDir returns the path of the directory to mount as the
@@ -244,13 +243,13 @@ func (locator *Locator) ContainerWorkspaceMountDir() string {
 
 // RunInfoYAMLFilename returns the path to the run info file within the project.
 func (locator *Locator) RunInfoYAMLFilename() string {
-	return path.Join(locator.contextDir, "out", "run-info.yaml")
+	return filepath.Join(locator.contextDir, "out", "run-info.yaml")
 }
 
 // gitKeepDir creates a .gitkeep file in the specified directory if it does not
 // exist.
 func gitKeepDir(dir string) error {
-	gitKeepFilename := path.Join(dir, ".gitkeep")
+	gitKeepFilename := filepath.Join(dir, ".gitkeep")
 	err := CreateIfNotExists(gitKeepFilename, []byte{})
 	if err != nil {
 		return meh.Wrap(err, "create .gitkeep", meh.Details{"filename": gitKeepFilename})

@@ -15,7 +15,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -200,11 +199,11 @@ func (action *commandAction) newWorkspaceFileInputRequest(input lweeflowfile.Act
 		ingest: func(ctx context.Context, source io.Reader) error {
 			filename := input.Filename
 			if !filepath.IsAbs(filename) {
-				filename = path.Join(action.workspaceDir, input.Filename)
+				filename = filepath.Join(action.workspaceDir, input.Filename)
 			}
-			err := os.MkdirAll(path.Dir(filename), 0750)
+			err := os.MkdirAll(filepath.Dir(filename), 0750)
 			if err != nil {
-				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": path.Dir(filename)})
+				return meh.NewInternalErrFromErr(err, "mkdir all", meh.Details{"dir": filepath.Dir(filename)})
 			}
 			f, err := os.Create(filename)
 			if err != nil {
@@ -307,7 +306,7 @@ func (action *commandAction) newWorkspaceFileOutputOffer(output lweeflowfile.Act
 			}
 			filename := output.Filename
 			if !filepath.IsAbs(filename) {
-				filename = path.Join(action.workspaceDir, output.Filename)
+				filename = filepath.Join(action.workspaceDir, output.Filename)
 			}
 			action.logger.Debug("command done. now providing workspace file output.",
 				zap.String("filename", filename))
