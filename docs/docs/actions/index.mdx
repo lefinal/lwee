@@ -1,0 +1,94 @@
+---
+sidebar_position: 0
+---
+
+# Actions
+
+Actions describe operations to be performed on data.
+Each action consists of:
+
+1. Input definitions
+2. Operation to run
+3. Output definitions
+
+Inputs and outputs are described in the [Action IO section](../action-io.mdx).
+Here, we focus on the operations.
+
+Operations are available in different types.
+See the subsections for available ones.
+Each type along with its options, describes how the operation is being run.
+
+The naive way is to run a local program or command.
+However, this introduces compatibility issues if the same workflow is run in a different environment like another machine.
+Therefore, it is recommended to use containers instead.
+
+When running a workflow, the scheduler keeps track of all inputs and outputs.
+Once all inputs of an action are opened (ready to send data), the action is being started.
+Depending on input types, input ingestion might be done before this happens, like when files are required.
+The operation is then being run until it exits.
+If the exit code is not zero, the action is considered failed and will stop the workflow execution.
+
+## Action definition
+
+An action definition looks like this:
+
+```yaml
+# Optional description for documentation.
+description: ""
+# Input descriptions consist of a key-value map.
+# Properly named inputs also serve better human-readability.
+in:
+  myInput1:
+    # Data source. Required.
+    source: flow.in.myData
+    # How to provide the data to the operation. Required.
+    provideAs: stdin
+  myInput2:
+    # ...
+# Run configuration.
+run:
+  # Type of the run-operation. Required.
+  type: proj-action
+  # Operation related configuration.
+  name: to-uppercase
+# Output descriptions consist of a key-value map.
+out:
+  myOutput:
+    # How to read the data from the operation. Required.
+    providedAs: stdout
+```
+
+## Templating
+
+Depending on the action and IO type, templating support may be available.
+This allows using [Go template syntax](https://pkg.go.dev/text/template) to render values at runtime.
+
+You can access the whole workflow in its raw representation as map via `.Flow.Raw`.
+For example, if you want to fill in the source type of an input, you can use
+
+```gotemplate
+{{ .Flow.Raw.actions.myActionName.in.myInputName.source }}
+```
+
+You can also incorporate details regarding the current action.
+
+- `.Action.Name`: The name of the action.
+- `.Action.Extras`: See the specific action types for details.
+
+Example action for reading file info:
+
+```yaml
+in:
+  entries:
+    source: flow.in.weatherData
+    provideAs: workspace-file
+    filename: "weather-data.txt"
+run:
+  type: command
+  command:
+    - "stat"
+    - "{{ .Action.Extras.WorkspaceDir }}/{{ .Flow.Raw.actions.fileInfo.in.entries.filename }}"
+out:
+  fileInfo:
+    providedAs: stdout
+```

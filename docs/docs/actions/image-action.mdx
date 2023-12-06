@@ -1,0 +1,33 @@
+# Image Action
+
+Image actions do not build an image from local sources but fetch it.
+This is similar to how you usually use Docker.
+
+::::tip
+Always pin your image versions to avoid unwanted changes due to image updates.
+::::
+
+## Configuration
+
+```yaml
+type: image
+# The image to use. Required.
+image: "python:3.9.18"
+# Overwrite the configured command in the image.
+command:
+  - "my-command"
+  - "with"
+  - "arguments"
+# Environment variables for the container in key-value pairs.
+env:
+  key1: "value1"
+  key2: "value2"
+```
+
+## Templating
+
+Additional available fields:
+
+- `.Action.Extras.WorkspaceHostDir`: Temporary directory on the host that is mounted to the container.
+- `.Action.Extras.WorkspaceMountDir`: Directory in the container where the workspace from the host is mounted.
+Usually, this is at _/lwee_.

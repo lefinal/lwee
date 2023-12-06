@@ -1,0 +1,28 @@
+# Workspace File
+
+`workspace-file`
+
+A workspace file reads a file in the action's working directory.
+For containerized actions like [project actions](./../actions/project-action.mdx), the workspace will be mounted into the container – usually at _/lwee_.
+
+::::info
+Keep in mind that in order for an action to be started, all inputs need to be available.
+This also means that files need to be fully written.
+If your actions exchange data through files, this means that they cannot be run in parallel as the previous action needs to finish before the next action can start.
+::::
+
+## Configuration
+
+```yaml
+providedAs: workspace-file
+# The filename, relative to the workspace directory.
+filename: "my-file.csv"
+```
+
+For containerized actions like [project actions](./../actions/project-action.mdx), the filename must not be absolute as only the workspace directory will be mounted to the container.
+
+::::tip
+As with containerized actions, stick to using relative filenames so that files are placed in the action's working directory.
+This ensures better compatibility among machines.
+If you need to provide an absolute filepath in actions, you can use templating to get the absolute path.
+::::

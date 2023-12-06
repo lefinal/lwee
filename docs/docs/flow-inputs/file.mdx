@@ -1,0 +1,18 @@
+# File
+
+`file`
+
+Ingests data into the flow from a file.
+
+::::tip
+Try to place your files within the project.
+This improves reproducibility as when you check-in the project into a VCS or upload it, all related data is available for reproducing results or altering data processing.
+::::
+
+## Configuration
+
+```yaml
+providedAs: file
+# Filename. If not absolute, relative to the project's root directory.
+filename: src/my_data.csv
+```

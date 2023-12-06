@@ -1,0 +1,94 @@
+# Command Action
+
+Command actions run a local command or application.
+This should be avoided as much as possible.
+The reason for this is that before running the same workflow on a different machine, you need to make sure that all dependencies are satisfied.
+You also need to make sure that their versions match in case there were changes to the application between updates.
+Each application also needs to be configured correctly.
+LWEE was designed with the idea of being able to run the same workflow without issues on different machines.
+Thus, allowing convenient reproducible and portable workflows.
+Running locally available applications violates this principle.
+
+However, sometimes there are situations where you rely on local applications that where configured to run in a specific environment.
+In this case, LWEE provides you with some ways to assist in making clear what was going on when a workflow was run.
+
+## Configuration
+
+```yaml
+type: command
+# The command to run. Required.
+command:
+  - "python3"
+  - "--version"
+# See sections below.
+log: {}
+# See sections below.
+assert: {}
+```
+
+## Logs and assertions
+
+Being able to understand how data was generated is crucial.
+With containerized actions, you can see what operation was being run on the data.
+With local applications, you manually need to log important information.
+
+LWEE allows you to run arbitrary commands and log their results in the output directory:
+
+```yaml
+logs:
+  # Name of the information to log.
+  pythonVersion:
+    # Command to run.
+    run:
+      - "python3"
+      - "--version"
+```
+
+The information will be logged along with others in _/out/run-info.yaml_:
+
+```yaml
+flowName: My Simple Flow
+start: 2023-11-17T19:44:02.037467359+01:00
+end: 2023-11-17T19:44:03.674546426+01:00
+took: 1.637079067s
+actions:
+    # ...
+    myAction:
+        start: 2023-11-17T19:44:02.037651278+01:00
+        end: 2023-11-17T19:44:02.038923736+01:00
+        took: 1.272458ms
+        info: # Information will be logged here.
+            pythonVersion: |
+                Python 3.10.12
+```
+
+However, sometimes you may want to make certain assertions before running the workflow.
+This may include version checks to make sure that a minimum version is installed or other conditions are met.
+Assertions can be configured via the `assert` field:
+
+```yaml
+assert:
+  # Name of the assertion.
+  versionMatches:
+    # Command to run.
+    run:
+      - "python3"
+      - "--version"
+    # Comparison method to use.
+    should: equal
+    # Value used for equality comparison.
+    target: "Python 3.10.12"
+```
+
+Available comparison methods:
+
+- `contain`: Asserts that the target substring is found in the command output.
+- `equal`: Asserts that the command output is equal to the target after trimmed line-breaks.
+- `match-regex`: Asserts that the command output matches the regular expression in target after trimmed line-breaks.
+The regular expression must be in [Go regexp syntax](https://pkg.go.dev/regexp/syntax).
+
+## Templating
+
+Additional available fields:
+
+- `.Action.Extras.WorkspaceDir`: Temporary directory on the host that can be used for file storage/exchange.

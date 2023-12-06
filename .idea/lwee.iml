@@ -6,6 +6,7 @@
       <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/action-io/project-data-integrity/out" />
       <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/command-assert/project/out" />
       <excludeFolder url="file://$MODULE_DIR$/lwee/e2e/cycle-detection/project/out" />
+      <excludeFolder url="file://$MODULE_DIR$/docs/.docusaurus" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -1,0 +1,8 @@
+{
+  "label": "Action Outputs",
+  "position": 57,
+  "link": {
+    "type": "generated-index",
+    "description": "Extract data from actions with these output types."
+  }
+}

@@ -1,0 +1,19 @@
+# File
+
+`file`
+
+Extracts data from the flow to a file.
+
+::::tip
+Try to output your files to _out_ in the project directory.
+This improves reproducibility as when you check-in the project into a VCS or upload it, all related data is available for reproducing results or altering data processing.
+Run information will be written to _out/run-info.yaml_ by default, so all required information to understand the data processing is available in the project.
+::::
+
+## Configuration
+
+```yaml
+provideAs: file
+# Filename. If not absolute, relative to the project's root directory.
+filename: src/my_data.csv
+```

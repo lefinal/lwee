@@ -1,0 +1,8 @@
+{
+  "label": "Action Inputs",
+  "position": 56,
+  "link": {
+    "type": "generated-index",
+    "description": "Ingest data into actions with these input types."
+  }
+}

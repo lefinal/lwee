@@ -1,0 +1,192 @@
+---
+sidebar_position: 100
+---
+
+# Go SDK
+
+The LWEE Go SDK provides an easy way of building actions with the [Go](https://go.dev/) programming language.
+The concurrency concepts and fast learning curve make it appealing to building applications with it.
+LWEE provides you with an SDK to make it even easier.
+Under the hood, it uses [LWEE streams](./streams.mdx).
+
+## Getting started
+
+Create a new project action with:
+
+```shell
+lwee create-action
+```
+
+Enter your action name.
+This will also be the name of the module.
+Then, select **Go (SDK)** as template.
+Your action is now created and initialized with a template.
+
+If you want to add the Go SDK to an existing project, you can run:
+
+```shell
+go get -u github.com/lefinal/lwee/go-sdk
+```
+
+## Concepts
+
+The SDK uses [LWEE streams](./streams.mdx) for data transmission.
+For a simple application you need to perform these steps:
+
+1. Create a client.
+2. Register your input stream requests.
+3. Register your output stream offers.
+4. Add your data handling.
+5. Serve the client.
+
+How to do that will be explained in the following sections.
+We will explain the template step by step.
+Note that we do not add specific error handling.
+Proper error handling is your own responsibility.
+
+## Creating the client
+
+First, we need to import the SDK into our application/file:
+
+```go
+import "github.com/lefinal/lwee/go-sdk/lweeclient"
+```
+
+Then, we need to create an LWEE client.
+
+```go
+client := lweeclient.New(lweeclient.Options{})
+```
+
+Normally, you do not need to supply any options.
+
+## Registering input stream requests
+
+Each input stream has a name.
+We create a request for it in the following way:
+
+```go
+entriesInput, err := client.RequestInputStream("entries")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+This adds a request for the input stream with name _entries_.
+The returned value is of type `lweeclient.InputReader`.
+It implements the `io.Reader` interface along with `WaitForInput(context.Context) error`.
+We will use this reader later.
+
+Add all remaining input stream requests.
+
+## Registering output stream offers
+
+Each output stream has a name as well.
+We create offers like this:
+
+```go
+entryCountOutput, err := client.ProvideOutputStream("entryCount")
+if err != nil {
+    log.Fatal(err)
+}
+defer entryCountOutput.Close(nil)
+```
+
+This adds an offer for the output stream with name _entryCount_.
+The returned value is an `lweeclient.OutputWriter` which implements `io.WriteCloser` along with `Open() error` and `Close(error)`.
+
+::::tip
+In Go, it is considered best-practice to `defer` closing of resources to minimize chances of forgetting to close them which could lead to resource leaks.
+The `defer` statement will close the body when the function exits.
+::::
+
+Add your remaining output stream offers as well.
+
+## Adding application logic
+
+When dealing with data, we will work on the created input readers and output writers.
+In most cases, we wait for input streams to open.
+We will then read data from them and process it.
+Once output data is available, we will open the corresponding output stream(s) once and then write our data.
+
+In the following example, we expect the input stream to receive entries, separated by line separators.
+We want to count the number of entries (lines).
+Let's get started and add our logic.
+
+To do so, we register a do-function on the client.
+This is just a helper method so that we can skip synchronizing multiple goroutines and managing `context.Context` by letting the SDK handle it for us.
+The method signature is as follows:
+
+```go
+Do(func(ctx context.Context) error)
+```
+
+This will start the function in a new goroutine and pass the client's lifetime context.
+If the function returns an error, execution will be considered failed and the client shuts down.
+The client will block in `Serve` (see below) until all functions, registered via `Do` have finished.
+
+Let us get back to our example:
+First, we need to wait until our input stream with the entries is open.
+
+```go
+err := entriesInput.WaitForOpen(ctx)
+if err != nil {
+    return fmt.Errorf("wait for entries input to open: %w", err)
+}
+```
+
+Then, we need to create a scanner so that we can read each line separately.
+We do not want to read all input data at once as we expect large data amounts.
+Therefore, we use I/O directly.
+
+```go
+scanner := bufio.NewScanner(entriesInput)
+entryCount := 0
+for scanner.Scan() {
+    entryCount++
+}
+err = scanner.Err()
+if err != nil {
+    return fmt.Errorf("read entries input: %w", err)
+}
+```
+
+Now that we have our entry count, we can output it.
+To do that, we first notify LWEE that the output is ready:
+
+```go
+err = entryCountOutput.Open()
+if err != nil {
+    return fmt.Errorf("open entry count output: %w", err)
+}
+```
+
+Then we write the result to the output:
+
+```go
+_, err = io.Copy(entryCountOutput, strings.NewReader(strconv.Itoa(entryCount)))
+if err != nil {
+    return fmt.Errorf("output entry count: %w", err)
+}
+entryCountOutput.Close(nil)
+```
+
+At the end, we simply return `nil`.
+
+::::note
+In case of an error and not using `Do`, you could also close the output with a non-nil error.
+This will also notify LWEE that execution failed and the client will shut down as well.
+::::
+
+## Starting the client
+
+Finally, outside the `Do` function, we can now start the client with `Serve()`.
+This will serve the HTTP API used by LWEE to connect.
+The call will block until the client is instructed by LWEE to shut down and all `Do`-functions have finished.
+
+```go
+err = client.Serve()
+if err != nil {
+    log.Fatal(err)
+}
+```

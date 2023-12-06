@@ -1,0 +1,18 @@
+# Stdout
+
+`stdout`
+
+Reads data from stdout until the operation exits.
+This output type is the easiest to use and has a wide range of support for other programming languages and applications.
+
+::::tip
+Although LWEE provides buffering for IO, you should try to avoid many small writes to stdout.
+LWEE can only reduce the latency it takes for the receiver to read the data but not the general IO latency due to writes.
+Use buffers where available.
+::::
+
+## Configuration
+
+```yaml
+providedAs: stdout
+```

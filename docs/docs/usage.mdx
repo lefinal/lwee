@@ -1,0 +1,109 @@
+---
+sidebar_position: 20
+---
+
+# Usage
+
+Make sure to have LWEE properly set up by running:
+
+```shell
+lwee version
+```
+
+The command syntax is:
+```
+lwee [options] command
+```
+
+When running commands, LWEE searches in the current or parent directory for an LWEE project.
+These are identified by having a _.lwee_ directory in the project root.
+Alternatively, you can specify the project path manually using [--dir](#--dir).
+
+## Commands
+
+LWEE provides multiple commands for workflow programming and execution.
+If you run the application in an LWEE project, you will be prompted with a command selection.
+Select a command from the list and then press <kbd>ENTER</kbd> to execute.
+
+Alternatively, you can specify the command directly when invoking LWEE.
+
+### run, r
+
+Run the specified workflow in the current project.
+
+### verify, v
+
+Perform a dry run of the workflow but do not execute actions.
+
+### create-action, ca
+
+Create a project action in the current project.
+You will be prompted with the name of the action to create.
+It is recommended to name your action in kebab-case.
+You will then be asked to select an action template.
+The following options are available:
+
+- **None**: This will initialize the action with no files.
+It is your responsibility to set up a proper [Dockerfile](https://docs.docker.com/engine/reference/builder/).
+- **Go (SDK)**: Creates a Go application with an LWEE Go SDK template and ready-to-use [Dockerfile](https://docs.docker.com/engine/reference/builder/).
+Creating the action might take a while as LWEE will set up the latest version of the SDK.
+- **Go (native)**: Creates a Go application without any dependencies as well as a ready-to-use [Dockerfile](https://docs.docker.com/engine/reference/builder/).
+
+You can find the created project action in the _/actions_ directory.
+
+### init
+
+Initializes a new LWEE project in the current working directory.
+This includes setting up directories as well as creating a flow file template.
+
+### version
+
+Prints the installed version of LWEE.
+
+### help
+
+Prints a help summary.
+
+## Flags
+
+[//]: # (TODO)
+
+### --verbose, -v
+
+Enabled output of debug logs.
+
+### --dir
+
+Specifies the location of the project directory.
+If not set, the current working directory and its parents will be searched for an LWEE project and used instead.
+
+### --flow, -f
+
+Specifies the flow file to use.
+If a non-absolute file path is provided, the LWEE project's path will be used as the base.
+Defaults to _flow.yaml_.
+
+### --no-cleanup
+
+If set, temporary files and containers will not be cleaned up.
+This is useful for debugging purposes.
+Make sure to clean up possibly dangling containers yourself.
+
+This flag can also be set using environment variables.
+Set `LWEE_NO_CLEANUP` to `true` to disable cleanup.
+
+### --engine
+
+Specifies the container engine to use.
+Possible values are:
+
+- _docker_
+
+If not set, _docker_ will be used.
+
+This flag can also be set using environment variables.
+Set `LWEE_ENGINE` to the desired value.
+
+### --help, -h
+
+Prints a help summary.

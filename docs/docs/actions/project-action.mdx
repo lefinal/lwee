@@ -1,0 +1,53 @@
+# Project Action
+
+Project actions describe container images that are being built from sources in the project.
+This is the preferred way of using operations as each image can easily be reproduced with the available source code.
+You can also inspect the code directly as it lies in the project's directory.
+
+In LWEE project actions are stored in the _/actions_ directory.
+You can easily create one using:
+
+```shell
+lwee create-action
+```
+
+See the [Usage section](./../usage.mdx) for more details.
+
+Each project action consists of an _action.yaml_ file that currently holds a list of configurations.
+This is meant for future features where different run configurations might be stored in a centralized manner.
+Additionally, there is the _Dockerfile_ which is used to build the image.
+Have a look at the official [Dockerfile reference](https://docs.docker.com/engine/reference/builder/) for more information on that topic.
+
+::::tip
+Always pin your image versions to avoid unwanted changes due to image updates.
+::::
+
+When a workflow should be executed with LWEE, it will build all project actions on startup, prior to starting the actions.
+
+## Configuration
+
+```yaml
+type: proj-action
+# Identifier of the project action.
+# This is the name you specified at creation and is also the directory name.
+name: "to-uppercase"
+# Config to use. Defaults to "default". Reserved for future use.
+config: "default"
+# Overwrite the configured command in the image.
+command:
+  - "my-command"
+  - "with"
+  - "arguments"
+# Environment variables for the container in key-value pairs.
+env:
+  key1: "value1"
+  key2: "value2"
+```
+
+## Templating
+
+Additional available fields:
+
+- `.Action.Extras.WorkspaceHostDir`: Temporary directory on the host that is mounted to the container.
+- `.Action.Extras.WorkspaceMountDir`: Directory in the container where the workspace from the host is mounted.
+Usually, this is at _/lwee_.
