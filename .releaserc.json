@@ -27,14 +27,6 @@
       }
     ],
     [
-      "@semantic-release/git",
-      {
-        "assets": [
-          "CHANGELOG.md"
-        ]
-      }
-    ],
-    [
       "@semantic-release/exec",
       {
         "prepareCmd": "(cd ./docs && npm run build)"
@@ -44,6 +36,14 @@
       "@semantic-release/exec",
       {
         "prepareCmd": "(cd ./lwee && go build -o lwee)"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md"
+        ]
       }
     ],
     [
