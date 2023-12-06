@@ -41,31 +41,31 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "(cd ./lwee && GOOS=linux GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version})-linux-amd64"
+        "prepareCmd": "(cd ./lwee && GOOS=linux GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-linux-amd64)"
       }
     ],
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "(cd ./lwee && GOOS=linux GOARCH=arm64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version})-linux-arm64"
+        "prepareCmd": "(cd ./lwee && GOOS=linux GOARCH=arm64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-linux-arm64)"
       }
     ],
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "(cd ./lwee && GOOS=darwin GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version})-darwin-amd64"
+        "prepareCmd": "(cd ./lwee && GOOS=darwin GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-darwin-amd64)"
       }
     ],
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "(cd ./lwee && GOOS=darwin GOARCH=arm64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version})-darwin-arm64"
+        "prepareCmd": "(cd ./lwee && GOOS=darwin GOARCH=arm64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-darwin-arm64)"
       }
     ],
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "(cd ./lwee && GOOS=windows GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version})-win-amd64"
+        "prepareCmd": "(cd ./lwee && GOOS=windows GOARCH=amd64 go build -o lwee && mv ./lwee ./build/lwee-v${nextRelease.version}-win-amd64)"
       }
     ],
     [
