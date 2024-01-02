@@ -301,6 +301,40 @@ func TestActionRunnerCommand_Validate(t *testing.T) {
 		},
 
 		{
+			name:  "env missing",
+			valid: true,
+			mutate: func(val *ActionRunnerCommand) {
+				val.Env = nil
+			},
+		},
+		{
+			name:  "env missing 2",
+			valid: true,
+			mutate: func(val *ActionRunnerCommand) {
+				val.Env = make(map[string]string)
+			},
+		},
+		{
+			name:  "env single",
+			valid: true,
+			mutate: func(val *ActionRunnerCommand) {
+				val.Env = map[string]string{
+					"HELLO": "world",
+				}
+			},
+		},
+		{
+			name:  "env multiple",
+			valid: true,
+			mutate: func(val *ActionRunnerCommand) {
+				val.Env = map[string]string{
+					"HELLO": "world",
+					"OLA":   "!",
+				}
+			},
+		},
+
+		{
 			name:  "assertions invalid",
 			valid: false,
 			mutate: func(val *ActionRunnerCommand) {
@@ -333,6 +367,9 @@ func TestActionRunnerCommand_Validate(t *testing.T) {
 					Command: []string{
 						"echo",
 						"Hello World!",
+					},
+					Env: map[string]string{
+						"HELLO": "WORLD",
 					},
 					Assertions: map[string]ActionRunnerCommandAssertion{
 						"versionMatches": {

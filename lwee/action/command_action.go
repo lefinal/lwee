@@ -39,6 +39,7 @@ type commandAction struct {
 	assertions       map[string]commandassert.Assertion
 	runInfoProviders map[string]runinfo.Provider
 	command          []string
+	env              map[string]string
 	workspaceDir     string
 	// stdinReader is not nil when an input ingestion request for stdin was made.
 	// Input data will be available via this reader.
@@ -77,6 +78,7 @@ func (factory *Factory) newCommandAction(base *base, renderData templaterender.D
 		assertions:       make(map[string]commandassert.Assertion),
 		runInfoProviders: make(map[string]runinfo.Provider),
 		command:          commandActionDetails.Command,
+		env:              commandActionDetails.Env,
 		workspaceDir:     workspaceDir,
 		commandState:     commandStateReady,
 		commandStateCond: sync.NewCond(&sync.Mutex{}),
@@ -355,6 +357,12 @@ func (action *commandAction) Start(startCtx context.Context) (<-chan error, erro
 	// Prepare command.
 	action.cmd = exec.CommandContext(ctx, action.command[0], action.command[1:]...)
 	action.cmd.Dir = action.workspaceDir
+	// Add environment variables.
+	action.cmd.Env = os.Environ()
+	for k, v := range action.env {
+		action.cmd.Env = append(action.cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	// Add IO.
 	if action.stdinReader != nil {
 		action.cmd.Stdin = action.stdinReader
 	}

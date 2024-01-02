@@ -220,6 +220,8 @@ type ActionRunnerCommand struct {
 	ActionRunnerBase
 	// Command to run.
 	Command []string `json:"command"`
+	// Env holds environment variables to set for the application.
+	Env map[string]string `json:"env"`
 	// Assertions to check before running the command.
 	Assertions map[string]ActionRunnerCommandAssertion `json:"assert"`
 	// RunInfo to log.
