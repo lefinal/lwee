@@ -6,7 +6,7 @@ in:
   #
   #  myFlowInputName:
   #    providedAs: file
-  #    filepath: src/input.csv
+  #    filename: src/input.csv
 actions:
   # Here, you can define actions that will be performed once all required
   # inputs are available.
