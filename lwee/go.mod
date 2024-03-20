@@ -3,7 +3,7 @@ module github.com/lefinal/lwee/lwee
 go 1.21
 
 require (
-	github.com/docker/docker v24.0.7+incompatible
+	github.com/docker/docker v24.0.9+incompatible
 	github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/lefinal/meh v1.11.0
